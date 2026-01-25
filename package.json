@@ -1,0 +1,41 @@
+{
+  "name": "calendar-metrics",
+  "private": true,
+  "workspaces": {
+    "packages": [
+      "apps/*",
+      "packages/*"
+    ],
+    "catalog": {
+      "dotenv": "^17.2.2",
+      "zod": "^4.1.13",
+      "typescript": "^5",
+      "convex": "^1.31.2",
+      "better-auth": "1.4.9",
+      "@convex-dev/better-auth": "^0.10.9",
+      "@convex-dev/agent": "^0.3.2",
+      "@better-auth/expo": "1.4.9"
+    }
+  },
+  "type": "module",
+  "scripts": {
+    "dev": "turbo dev",
+    "build": "turbo build",
+    "check-types": "turbo check-types",
+    "dev:native": "turbo -F native dev",
+    "dev:web": "turbo -F web dev",
+    "dev:server": "turbo -F @calendar-metrics/backend dev",
+    "dev:setup": "turbo -F @calendar-metrics/backend dev:setup"
+  },
+  "dependencies": {
+    "@calendar-metrics/env": "workspace:*",
+    "dotenv": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@calendar-metrics/config": "workspace:*",
+    "turbo": "^2.6.3",
+    "typescript": "catalog:"
+  },
+  "packageManager": "bun@1.2.22"
+}
