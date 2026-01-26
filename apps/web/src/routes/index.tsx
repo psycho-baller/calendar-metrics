@@ -2,6 +2,8 @@ import { api } from "@calendar-metrics/backend/convex/_generated/api";
 import { convexQuery } from "@convex-dev/react-query";
 import { useQuery } from "@tanstack/react-query";
 import { createFileRoute } from "@tanstack/react-router";
+import { authClient } from "@/lib/auth-client";
+import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/")({
   component: HomeComponent,
@@ -45,6 +47,16 @@ function HomeComponent() {
             </span>
           </div>
         </section>
+        <Button
+            onClick={() =>
+              authClient.signIn.social({
+                provider: "google",
+                callbackURL: "/", // Redirect back to home after login
+              })
+            }
+          >
+            Sign in with Google
+          </Button>
       </div>
     </div>
   );
