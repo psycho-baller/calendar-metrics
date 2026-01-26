@@ -38,7 +38,8 @@
     "tailwindcss": "^4.1.3",
     "tw-animate-css": "^1.2.5",
     "vite-tsconfig-paths": "^5.1.4",
-    "zod": "catalog:"
+    "zod": "catalog:",
+    "nitro": "npm:nitro-nightly@latest"
   },
   "devDependencies": {
     "@calendar-metrics/config": "workspace:*",
