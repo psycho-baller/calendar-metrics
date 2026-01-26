@@ -21,7 +21,7 @@ export const authComponent = createClient<DataModel>(components.betterAuth);
 function createAuth(ctx: GenericCtx<DataModel>) {
   return betterAuth({
     baseURL: siteUrl,
-    trustedOrigins: [siteUrl, nativeAppUrl, "http://localhost:3001", "http://localhost:8081"],
+    trustedOrigins: [siteUrl, nativeAppUrl, "http://localhost:8081", "https://calendar-metrics.vercel.app"],
     database: authComponent.adapter(ctx),
     emailAndPassword: {
       enabled: true,
