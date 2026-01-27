@@ -14,7 +14,7 @@ export default defineSchema({
   metricValues: defineTable({
     eventId: v.id("events"),
     key: v.string(),
-    value: v.union(v.number(), v.boolean()),
+    value: v.union(v.number(), v.boolean(), v.string()),
   })
     .index("by_eventId", ["eventId"])
     .index("by_key", ["key"]),

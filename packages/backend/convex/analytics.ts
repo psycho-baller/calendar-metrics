@@ -48,7 +48,7 @@ export const getEvents = query({
           metrics: metrics.reduce((acc, m) => {
             acc[m.key] = m.value;
             return acc;
-          }, {} as Record<string, number | boolean>),
+          }, {} as Record<string, number | boolean | string>),
         };
       })
     );
@@ -134,13 +134,13 @@ export const getMetricTimeSeries = query({
   },
 });
 
-// Get summary statistics for all metrics
+// Get summary statistics for all metrics (numbers, booleans, and strings)
 export const getMetricsSummary = query({
   args: {},
   handler: async (ctx) => {
     const user = await authComponent.safeGetAuthUser(ctx);
     if (!user) {
-      return {};
+      return { numeric: {}, categorical: {} };
     }
 
     // Get user's selected calendar
@@ -150,7 +150,7 @@ export const getMetricsSummary = query({
       .first();
 
     if (!settings?.selectedCalendarId) {
-      return {};
+      return { numeric: {}, categorical: {} };
     }
 
     // Get events from selected calendar
@@ -164,49 +164,84 @@ export const getMetricsSummary = query({
     const allMetrics = await ctx.db.query("metricValues").collect();
     const relevantMetrics = allMetrics.filter((m) => eventIds.has(m.eventId));
 
-    // Group by key and calculate stats
-    const statsByKey: Record<string, {
+    // Group numeric metrics
+    const numericStats: Record<string, {
+      type: "numeric";
       count: number;
       sum: number;
       min: number;
       max: number;
       avg: number;
-      values: number[];
+    }> = {};
+
+    // Group categorical metrics (strings and booleans)
+    const categoricalStats: Record<string, {
+      type: "categorical";
+      count: number;
+      valueCounts: Record<string, number>;
+      topValue: string;
     }> = {};
 
     for (const metric of relevantMetrics) {
-      if (typeof metric.value !== "number") continue;
+      if (typeof metric.value === "number") {
+        // Numeric metric
+        if (!numericStats[metric.key]) {
+          numericStats[metric.key] = {
+            type: "numeric",
+            count: 0,
+            sum: 0,
+            min: Infinity,
+            max: -Infinity,
+            avg: 0,
+          };
+        }
 
-      if (!statsByKey[metric.key]) {
-        statsByKey[metric.key] = {
-          count: 0,
-          sum: 0,
-          min: Infinity,
-          max: -Infinity,
-          avg: 0,
-          values: [],
-        };
+        const stats = numericStats[metric.key];
+        stats.count++;
+        stats.sum += metric.value;
+        stats.min = Math.min(stats.min, metric.value);
+        stats.max = Math.max(stats.max, metric.value);
+      } else {
+        // Categorical metric (string or boolean)
+        const stringValue = String(metric.value);
+
+        if (!categoricalStats[metric.key]) {
+          categoricalStats[metric.key] = {
+            type: "categorical",
+            count: 0,
+            valueCounts: {},
+            topValue: "",
+          };
+        }
+
+        const stats = categoricalStats[metric.key];
+        stats.count++;
+        stats.valueCounts[stringValue] = (stats.valueCounts[stringValue] || 0) + 1;
       }
-
-      const stats = statsByKey[metric.key];
-      stats.count++;
-      stats.sum += metric.value;
-      stats.min = Math.min(stats.min, metric.value);
-      stats.max = Math.max(stats.max, metric.value);
-      stats.values.push(metric.value);
     }
 
-    // Calculate averages
-    for (const key of Object.keys(statsByKey)) {
-      const stats = statsByKey[key];
+    // Calculate averages for numeric metrics
+    for (const key of Object.keys(numericStats)) {
+      const stats = numericStats[key];
       stats.avg = stats.count > 0 ? stats.sum / stats.count : 0;
-      // Round to 2 decimal places
       stats.avg = Math.round(stats.avg * 100) / 100;
       stats.min = stats.min === Infinity ? 0 : stats.min;
       stats.max = stats.max === -Infinity ? 0 : stats.max;
     }
 
-    return statsByKey;
+    // Find top value for categorical metrics
+    for (const key of Object.keys(categoricalStats)) {
+      const stats = categoricalStats[key];
+      let maxCount = 0;
+      for (const [value, count] of Object.entries(stats.valueCounts)) {
+        if (count > maxCount) {
+          maxCount = count;
+          stats.topValue = value;
+        }
+      }
+    }
+
+    return { numeric: numericStats, categorical: categoricalStats };
   },
 });
 

@@ -113,14 +113,14 @@ export const syncEvents = action({
 
       // 6. Parse events
       const parsedEvents = events.map((event) => {
-        let metrics: Record<string, number | boolean> = {};
+        let metrics: Record<string, number | boolean | string> = {};
 
         if (event.description) {
           try {
             const doc = yaml.load(event.description);
             if (typeof doc === "object" && doc !== null) {
               Object.entries(doc).forEach(([key, val]) => {
-                if (typeof val === "number" || typeof val === "boolean") {
+                if (typeof val === "number" || typeof val === "boolean" || typeof val === "string") {
                   metrics[key] = val;
                 }
               });

@@ -88,8 +88,9 @@ function DashboardContent() {
     );
   }
 
-  const summaryData = metricsSummary || {};
-  const hasMetrics = Object.keys(summaryData).length > 0;
+  const numericMetrics = metricsSummary?.numeric || {};
+  const categoricalMetrics = metricsSummary?.categorical || {};
+  const hasMetrics = Object.keys(numericMetrics).length > 0 || Object.keys(categoricalMetrics).length > 0;
 
   return (
     <div className="container mx-auto max-w-6xl py-8 px-4">
@@ -115,21 +116,42 @@ function DashboardContent() {
         <EmptyState />
       ) : (
         <div className="space-y-8">
-          {/* Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {Object.entries(summaryData).map(([key, stats]) => (
-              <MetricCard
-                key={key}
-                title={key}
-                stats={stats}
-                isSelected={selectedMetric === key}
-                onClick={() => setSelectedMetric(key)}
-              />
-            ))}
-          </div>
+          {/* Numeric Metrics Cards */}
+          {Object.keys(numericMetrics).length > 0 && (
+            <div>
+              <h2 className="text-lg font-semibold mb-4 text-muted-foreground">📊 Numeric Metrics</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {Object.entries(numericMetrics).map(([key, stats]) => (
+                  <NumericMetricCard
+                    key={key}
+                    title={key}
+                    stats={stats}
+                    isSelected={selectedMetric === key}
+                    onClick={() => setSelectedMetric(key)}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
 
-          {/* Chart */}
-          {selectedMetric && (
+          {/* Categorical Metrics Cards */}
+          {Object.keys(categoricalMetrics).length > 0 && (
+            <div>
+              <h2 className="text-lg font-semibold mb-4 text-muted-foreground">🏷️ Categorical Metrics</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                {Object.entries(categoricalMetrics).map(([key, stats]) => (
+                  <CategoricalMetricCard
+                    key={key}
+                    title={key}
+                    stats={stats}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Chart (only for numeric metrics) */}
+          {selectedMetric && numericMetrics[selectedMetric] && (
             <MetricChart metricKey={selectedMetric} />
           )}
 
@@ -149,12 +171,13 @@ function EmptyState() {
         <h3 className="text-xl font-semibold mb-2">No metrics yet</h3>
         <p className="text-muted-foreground text-center max-w-md mb-6">
           Add YAML metadata to your calendar events to start tracking metrics.
-          Example: Add "mood: 8" or "productivity: 9" to event descriptions.
         </p>
         <div className="bg-muted p-4 rounded-lg font-mono text-sm">
           <pre>{`mood: 8
 productivity: 9
 energy: 7
+category: "work"
+location: "home"
 exercise: true`}</pre>
         </div>
       </CardContent>
@@ -162,7 +185,7 @@ exercise: true`}</pre>
   );
 }
 
-function MetricCard({
+function NumericMetricCard({
   title,
   stats,
   isSelected,
@@ -191,6 +214,43 @@ function MetricCard({
         </div>
         <p className="text-xs text-muted-foreground mt-1">
           {stats.count} data points
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+function CategoricalMetricCard({
+  title,
+  stats,
+}: {
+  title: string;
+  stats: { count: number; valueCounts: Record<string, number>; topValue: string };
+}) {
+  // Get top 3 values
+  const topValues = Object.entries(stats.valueCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3);
+
+  return (
+    <Card className="transition-all hover:scale-[1.02]">
+      <CardHeader className="pb-2">
+        <CardDescription className="capitalize">{title}</CardDescription>
+        <CardTitle className="text-xl font-bold truncate">
+          {stats.topValue || "—"}
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="space-y-1">
+          {topValues.map(([value, count]) => (
+            <div key={value} className="flex justify-between text-sm">
+              <span className="truncate text-muted-foreground">{value}</span>
+              <span className="font-medium text-purple-500">{count}×</span>
+            </div>
+          ))}
+        </div>
+        <p className="text-xs text-muted-foreground mt-2">
+          {stats.count} total · {Object.keys(stats.valueCounts).length} unique
         </p>
       </CardContent>
     </Card>

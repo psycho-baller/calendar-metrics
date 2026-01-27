@@ -51,7 +51,7 @@ export const saveEvents = internalMutation({
         });
       }
 
-      for (const [key, value] of Object.entries(evt.metrics as Record<string, number | boolean>)) {
+      for (const [key, value] of Object.entries(evt.metrics as Record<string, number | boolean | string>)) {
         await ctx.db.insert("metricValues", {
           eventId,
           key,
