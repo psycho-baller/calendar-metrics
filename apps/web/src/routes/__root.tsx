@@ -20,7 +20,9 @@ import Header from "../components/header";
 import appCss from "../index.css?url";
 
 const getAuth = createServerFn({ method: "GET" }).handler(async () => {
-  return await getToken();
+  const token = await getToken();
+  console.log("DEBUG: getAuth token:", token);
+  return token;
 });
 
 export interface RouterAppContext {
@@ -53,6 +55,7 @@ export const Route = createRootRouteWithContext<RouterAppContext>()({
   component: RootDocument,
   beforeLoad: async (ctx) => {
     const token = await getAuth();
+    console.log("DEBUG: beforeLoad token:", token);
     if (token) {
       ctx.context.convexQueryClient.serverHttpClient?.setAuth(token);
     }

@@ -17,6 +17,7 @@
     "better-auth": "catalog:",
     "convex": "catalog:",
     "dotenv": "catalog:",
+    "googleapis": "^170.1.0",
     "js-yaml": "^4.1.1",
     "zod": "catalog:"
   },

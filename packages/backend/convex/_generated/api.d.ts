@@ -11,7 +11,10 @@
 import type * as agent from "../agent.js";
 import type * as auth from "../auth.js";
 import type * as calendar from "../calendar.js";
+import type * as calendarData from "../calendarData.js";
 import type * as chat from "../chat.js";
+import type * as debugAuth from "../debugAuth.js";
+import type * as debugSecrets from "../debugSecrets.js";
 import type * as healthCheck from "../healthCheck.js";
 import type * as http from "../http.js";
 import type * as privateData from "../privateData.js";
@@ -27,7 +30,10 @@ declare const fullApi: ApiFromModules<{
   agent: typeof agent;
   auth: typeof auth;
   calendar: typeof calendar;
+  calendarData: typeof calendarData;
   chat: typeof chat;
+  debugAuth: typeof debugAuth;
+  debugSecrets: typeof debugSecrets;
   healthCheck: typeof healthCheck;
   http: typeof http;
   privateData: typeof privateData;
