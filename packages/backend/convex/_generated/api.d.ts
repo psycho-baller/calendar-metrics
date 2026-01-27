@@ -9,6 +9,7 @@
  */
 
 import type * as agent from "../agent.js";
+import type * as analytics from "../analytics.js";
 import type * as auth from "../auth.js";
 import type * as calendar from "../calendar.js";
 import type * as calendarData from "../calendarData.js";
@@ -29,6 +30,7 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   agent: typeof agent;
+  analytics: typeof analytics;
   auth: typeof auth;
   calendar: typeof calendar;
   calendarData: typeof calendarData;
