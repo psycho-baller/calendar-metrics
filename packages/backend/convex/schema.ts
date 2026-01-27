@@ -24,4 +24,11 @@ export default defineSchema({
     key: v.string(), // e.g. "google_refresh_token"
     value: v.string(),
   }).index("by_userId_key", ["userId", "key"]),
+
+  userSettings: defineTable({
+    userId: v.string(), // Links to Better Auth user ID
+    selectedCalendarId: v.optional(v.string()), // Google Calendar ID to track
+    selectedCalendarName: v.optional(v.string()), // Human-readable name
+    onboardingCompleted: v.optional(v.boolean()), // Track onboarding status
+  }).index("by_userId", ["userId"]),
 });

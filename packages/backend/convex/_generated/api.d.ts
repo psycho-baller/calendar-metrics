@@ -19,6 +19,7 @@ import type * as healthCheck from "../healthCheck.js";
 import type * as http from "../http.js";
 import type * as privateData from "../privateData.js";
 import type * as secrets from "../secrets.js";
+import type * as userSettings from "../userSettings.js";
 
 import type {
   ApiFromModules,
@@ -38,6 +39,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   privateData: typeof privateData;
   secrets: typeof secrets;
+  userSettings: typeof userSettings;
 }>;
 
 /**
