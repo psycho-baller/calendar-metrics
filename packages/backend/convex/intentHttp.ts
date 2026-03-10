@@ -30,13 +30,21 @@ type ReviewBody = DeviceAuthBody & {
 };
 
 type TogglWebhookPayload = {
+  event_id?: number;
+  created_at?: string;
+  creator_id?: number;
+  subscription_id?: number;
+  timestamp?: string;
+  url_callback?: string;
+  metadata?: Record<string, unknown>;
+  payload?: unknown;
+  validation_code?: string;
   id?: number;
   entity?: string;
   action?: string;
   at?: string;
   user_id?: number;
   workspace_id?: number;
-  validation_code?: string;
 };
 
 type TogglTimeEntry = {
@@ -183,6 +191,30 @@ async function togglRequest<T>(
   }
 
   return (await response.json()) as T;
+}
+
+async function togglTextRequest(
+  path: string,
+  init: RequestInit = {},
+) {
+  const apiToken = getRequiredEnv("TOGGL_API_TOKEN");
+  const response = await fetch(`${TOGGL_WEBHOOKS_BASE_URL}${path}`, {
+    ...init,
+    headers: {
+      authorization: getBasicAuthHeader(apiToken),
+      "content-type": "application/json",
+      ...(init.headers ?? {}),
+    },
+  });
+
+  const responseText = await response.text();
+  if (!response.ok) {
+    throw new Error(
+      `Toggl webhook request failed (${response.status}): ${responseText}`,
+    );
+  }
+
+  return responseText;
 }
 
 async function pingTogglWebhook(
@@ -416,23 +448,119 @@ async function fetchCurrentTogglTimeEntry() {
   };
 }
 
-async function validateWebhookIfNeeded(
-  payload: TogglWebhookPayload,
-) {
-  if (
-    !payload.validation_code ||
-    typeof payload.workspace_id !== "number" ||
-    typeof payload.id !== "number"
-  ) {
-    return;
+function asRecord(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
   }
 
-  await togglRequest<unknown>(
-    `/validate/${payload.workspace_id}/${payload.id}/${payload.validation_code}`,
-    {
-      method: "GET",
-    },
-  );
+  return value as Record<string, unknown>;
+}
+
+function readString(source: Record<string, unknown> | null, key: string) {
+  if (!source) {
+    return undefined;
+  }
+
+  const value = source[key];
+  return typeof value === "string" ? value : undefined;
+}
+
+function readNumber(source: Record<string, unknown> | null, key: string) {
+  if (!source) {
+    return undefined;
+  }
+
+  const value = source[key];
+  return typeof value === "number" ? value : undefined;
+}
+
+function readNumberish(source: Record<string, unknown> | null, key: string) {
+  if (!source) {
+    return undefined;
+  }
+
+  const value = source[key];
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : undefined;
+  }
+
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function extractWebhookEvent(body: TogglWebhookPayload) {
+  const source = body as Record<string, unknown>;
+  const payload = asRecord(source.payload);
+  const metadata = asRecord(source.metadata);
+
+  return {
+    eventId: readNumberish(source, "event_id"),
+    subscriptionId:
+      readNumberish(source, "subscription_id") ??
+      readNumberish(source, "id"),
+    validationCode: readString(source, "validation_code"),
+    entity:
+      readString(payload, "entity") ??
+      readString(metadata, "entity") ??
+      readString(metadata, "model") ??
+      readString(source, "entity"),
+    action:
+      readString(payload, "action") ??
+      readString(metadata, "action") ??
+      readString(source, "action"),
+    entityId:
+      readNumberish(payload, "id") ??
+      readNumberish(metadata, "entity_id") ??
+      readNumberish(source, "id"),
+    workspaceId:
+      readNumberish(payload, "workspace_id") ??
+      readNumberish(metadata, "workspace_id") ??
+      readNumberish(source, "workspace_id"),
+    happenedAt:
+      readString(payload, "at") ??
+      readString(source, "at") ??
+      readString(source, "timestamp") ??
+      readString(source, "created_at"),
+  };
+}
+
+async function validateWebhookIfNeeded(
+  payload: {
+    validationCode?: string;
+    workspaceId?: number;
+    subscriptionId?: number;
+  },
+) {
+  if (
+    !payload.validationCode ||
+    typeof payload.workspaceId !== "number" ||
+    typeof payload.subscriptionId !== "number"
+  ) {
+    return false;
+  }
+
+  try {
+    await togglTextRequest(
+      `/validate/${payload.workspaceId}/${payload.subscriptionId}/${payload.validationCode}`,
+      {
+        method: "GET",
+      },
+    );
+    return true;
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message.includes("has already been validated")
+    ) {
+      return true;
+    }
+
+    throw error;
+  }
 }
 
 export const bootstrap = httpAction(async (ctx, request) => {
@@ -739,34 +867,50 @@ export const togglWebhook = httpAction(async (ctx, request) => {
       return json(401, { error: "Webhook signature validation failed." });
     }
 
-    await validateWebhookIfNeeded(body);
+    const eventDetails = extractWebhookEvent(body);
+    const wasValidated = await validateWebhookIfNeeded({
+      validationCode: eventDetails.validationCode,
+      workspaceId:
+        eventDetails.workspaceId ??
+        integration?.togglWorkspaceId ??
+        getOptionalNumberEnv("TOGGL_WORKSPACE_ID"),
+      subscriptionId: eventDetails.subscriptionId,
+    });
 
-    const dedupeKey = [
-      body.entity ?? "unknown",
-      body.action ?? "unknown",
-      body.id ?? "unknown",
-      body.at ?? "unknown",
-      body.validation_code ?? "no_validation_code",
-    ].join(":");
+    const dedupeKey =
+      typeof eventDetails.eventId === "number" &&
+      Number.isSafeInteger(eventDetails.eventId)
+        ? `event:${eventDetails.eventId}`
+        : [
+            eventDetails.entity ?? "unknown",
+            eventDetails.action ?? "unknown",
+            eventDetails.entityId ?? "unknown",
+            eventDetails.happenedAt ?? "unknown",
+            eventDetails.validationCode ?? "no_validation_code",
+          ].join(":");
 
     const event = await ctx.runMutation(internal.intent.recordWebhookEvent, {
       dedupeKey,
-      entity: body.entity ?? "unknown",
-      action: body.action ?? "unknown",
-      entityId: String(body.id ?? "unknown"),
-      workspaceId: body.workspace_id,
-      happenedAt: body.at ? Date.parse(body.at) : undefined,
+      entity: eventDetails.entity ?? "unknown",
+      action: eventDetails.action ?? "unknown",
+      entityId: String(eventDetails.entityId ?? "unknown"),
+      workspaceId: eventDetails.workspaceId,
+      happenedAt: eventDetails.happenedAt
+        ? Date.parse(eventDetails.happenedAt)
+        : undefined,
       payloadJson: rawBody || JSON.stringify(body),
     });
 
     await ctx.runMutation(internal.intent.updateIntegrationState, {
       patch: {
         lastWebhookAt: Date.now(),
-        lastWebhookEntity: body.entity ?? "unknown",
-        lastWebhookAction: body.action ?? "unknown",
+        lastWebhookEntity: eventDetails.entity ?? "unknown",
+        lastWebhookAction: eventDetails.action ?? "unknown",
         lastWebhookTimeEntryId:
-          typeof body.id === "number" ? String(body.id) : undefined,
-        togglWebhookValidatedAt: body.validation_code ? Date.now() : undefined,
+          typeof eventDetails.entityId === "number"
+            ? String(eventDetails.entityId)
+            : undefined,
+        togglWebhookValidatedAt: wasValidated ? Date.now() : undefined,
         lastWebhookError: undefined,
       },
     });
@@ -778,17 +922,17 @@ export const togglWebhook = httpAction(async (ctx, request) => {
       });
     }
 
-    if (body.validation_code) {
+    if (eventDetails.validationCode) {
       return json(200, {
-        validation_code: body.validation_code,
+        validation_code: eventDetails.validationCode,
       });
     }
 
     if (
-      body.entity !== "time_entry" ||
-      typeof body.workspace_id !== "number" ||
-      typeof body.id !== "number" ||
-      !body.action
+      eventDetails.entity !== "time_entry" ||
+      typeof eventDetails.workspaceId !== "number" ||
+      typeof eventDetails.entityId !== "number" ||
+      !eventDetails.action
     ) {
       return json(200, {
         ok: true,
@@ -796,13 +940,15 @@ export const togglWebhook = httpAction(async (ctx, request) => {
       });
     }
 
-    if (body.action === "deleted") {
+    if (eventDetails.action === "deleted") {
       const deleted = await ctx.runMutation(
         internal.intent.markSessionDeletedBySourceId,
         {
-          action: body.action,
-          sourceTimeEntryId: String(body.id),
-          sourceUpdatedAt: body.at ? Date.parse(body.at) : undefined,
+          action: eventDetails.action,
+          sourceTimeEntryId: String(eventDetails.entityId),
+          sourceUpdatedAt: eventDetails.happenedAt
+            ? Date.parse(eventDetails.happenedAt)
+            : undefined,
         },
       );
 
@@ -812,9 +958,12 @@ export const togglWebhook = httpAction(async (ctx, request) => {
       });
     }
 
-    const timeEntry = await fetchTogglTimeEntry(body.workspace_id, body.id);
+    const timeEntry = await fetchTogglTimeEntry(
+      eventDetails.workspaceId,
+      eventDetails.entityId,
+    );
     const result = await ctx.runMutation(internal.intent.upsertSessionFromToggl, {
-      action: body.action,
+      action: eventDetails.action,
       timeEntry,
     });
 

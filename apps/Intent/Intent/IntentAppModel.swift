@@ -34,14 +34,11 @@ final class IntentAppModel: ObservableObject {
     private var presentedReviewInFlight = Set<String>()
     private var startFocusRetryAfter = [String: Date]()
     private var completeFocusRetryAfter = [String: Date]()
-    private var lastAutomaticPullAt: Date?
     private var knownShortcutNames = Set<String>()
     private var lastShortcutRefreshAt: Date?
     private var unavailableShortcuts = Set<String>()
 
     private let pollIntervalSeconds: TimeInterval = 2
-    private let backgroundPullIntervalSeconds: TimeInterval = 15
-    private let steadyStatePullIntervalSeconds: TimeInterval = 30
     private let shortcutRefreshIntervalSeconds: TimeInterval = 60
 
     init() {
@@ -246,7 +243,6 @@ final class IntentAppModel: ObservableObject {
         presentedReviewInFlight.removeAll()
         startFocusRetryAfter.removeAll()
         completeFocusRetryAfter.removeAll()
-        lastAutomaticPullAt = nil
         knownShortcutNames.removeAll()
         lastShortcutRefreshAt = nil
         unavailableShortcuts.removeAll()
@@ -274,7 +270,6 @@ final class IntentAppModel: ObservableObject {
 
     private func pollLoop() async {
         while !Task.isCancelled {
-            await maybeAutoPull()
             await pollOnce()
 
             do {
@@ -284,37 +279,6 @@ final class IntentAppModel: ObservableObject {
             } catch {
                 return
             }
-        }
-    }
-
-    private func maybeAutoPull() async {
-        guard configuration.isPaired else {
-            return
-        }
-
-        guard let integration = deviceState?.integration,
-              integration.togglWorkspaceId != nil else {
-            return
-        }
-
-        let interval =
-            integration.togglWebhookValidatedAt == nil ||
-            integration.lastWebhookError?.isEmpty == false ||
-            deviceState?.activeSession != nil
-            ? backgroundPullIntervalSeconds
-            : steadyStatePullIntervalSeconds
-
-        let now = Date()
-        if let lastAutomaticPullAt,
-           now.timeIntervalSince(lastAutomaticPullAt) < interval {
-            return
-        }
-
-        do {
-            _ = try await performPull(showNotice: false)
-            lastAutomaticPullAt = now
-        } catch {
-            lastError = displayMessage(for: error)
         }
     }
 
@@ -609,7 +573,6 @@ final class IntentAppModel: ObservableObject {
                 settings: deviceSettingsPayload
             )
         )
-        lastAutomaticPullAt = Date()
 
         if showNotice {
             lastNotice = response.reason
