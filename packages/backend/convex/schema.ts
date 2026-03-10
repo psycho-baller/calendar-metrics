@@ -7,6 +7,7 @@ export default defineSchema({
     calendarId: v.string(),
     title: v.string(),
     description: v.optional(v.string()),
+    isAllDay: v.boolean(),
     startTime: v.number(),
     endTime: v.number(),
   }).index("by_googleEventId", ["googleEventId"]),

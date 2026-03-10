@@ -9,6 +9,7 @@ export const saveEvents = internalMutation({
         calendarId: v.string(),
         title: v.string(),
         description: v.optional(v.string()),
+        isAllDay: v.boolean(),
         startTime: v.number(),
         endTime: v.number(),
         metrics: v.any(),
@@ -28,6 +29,7 @@ export const saveEvents = internalMutation({
         await ctx.db.patch(existing._id, {
           title: evt.title,
           description: evt.description,
+          isAllDay: evt.isAllDay,
           startTime: evt.startTime,
           endTime: evt.endTime,
         });
@@ -46,6 +48,7 @@ export const saveEvents = internalMutation({
           calendarId: evt.calendarId,
           title: evt.title,
           description: evt.description,
+          isAllDay: evt.isAllDay,
           startTime: evt.startTime,
           endTime: evt.endTime,
         });

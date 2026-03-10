@@ -136,6 +136,7 @@ export const syncEvents = action({
           calendarId,
           title: event.summary || "No Title",
           description: event.description || undefined,
+          isAllDay: !event.start?.dateTime,
           startTime: new Date(event.start?.dateTime || event.start?.date || 0).getTime(),
           endTime: new Date(event.end?.dateTime || event.end?.date || 0).getTime(),
           metrics,
