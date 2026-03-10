@@ -121,7 +121,9 @@ async function verifyWebhookSignature(
     return false;
   }
 
-  const signatureHeader = request.headers.get("x-webhooks-signature");
+  const signatureHeader =
+    request.headers.get("x-webhook-signature-256") ??
+    request.headers.get("x-webhooks-signature");
   if (!signatureHeader) {
     return secretHeader ? true : false;
   }
@@ -141,10 +143,13 @@ async function verifyWebhookSignature(
   const digest = Array.from(new Uint8Array(digestBuffer));
   const hexDigest = digest.map((value) => value.toString(16).padStart(2, "0")).join("");
   const base64Digest = btoa(String.fromCharCode(...digest));
+  const normalizedSignature = signatureHeader.startsWith("sha256=")
+    ? signatureHeader.slice("sha256=".length)
+    : signatureHeader;
 
   return (
-    simpleCompare(signatureHeader, hexDigest) ||
-    simpleCompare(signatureHeader, base64Digest)
+    simpleCompare(normalizedSignature, hexDigest) ||
+    simpleCompare(normalizedSignature, base64Digest)
   );
 }
 
@@ -178,6 +183,18 @@ async function togglRequest<T>(
   }
 
   return (await response.json()) as T;
+}
+
+async function pingTogglWebhook(
+  workspaceId: number,
+  subscriptionId: number,
+) {
+  return await togglRequest<{ status?: string }>(
+    `/ping/${workspaceId}/${subscriptionId}`,
+    {
+      method: "POST",
+    },
+  );
 }
 
 async function togglApiRequest<T>(
@@ -276,18 +293,35 @@ async function ensureTogglWebhook(ctx: any) {
     ? Date.parse(result.validated_at)
     : undefined;
 
+  let reason: string | undefined;
+  const subscriptionId = result.subscription_id ?? matching?.subscription_id;
+
+  if (!validationTimestamp && subscriptionId) {
+    try {
+      await pingTogglWebhook(workspaceId, subscriptionId);
+      reason = "Triggered a Toggl webhook validation ping.";
+    } catch (error) {
+      reason =
+        error instanceof Error
+          ? `Toggl webhook ping failed: ${error.message}`
+          : "Toggl webhook ping failed.";
+    }
+  }
+
   await ctx.runMutation(internal.intent.updateIntegrationState, {
     patch: {
       togglWorkspaceId: workspaceId,
-      togglWebhookSubscriptionId:
-        result.subscription_id ?? matching?.subscription_id,
+      togglWebhookSubscriptionId: subscriptionId,
       togglWebhookSecret: secret,
       togglWebhookDescription: description,
       togglWebhookUrl: callbackUrl,
       togglWebhookValidatedAt: Number.isFinite(validationTimestamp)
         ? validationTimestamp
         : undefined,
-      lastWebhookError: undefined,
+      lastWebhookError:
+        !validationTimestamp && reason?.startsWith("Toggl webhook ping failed")
+          ? reason
+          : undefined,
     },
   });
 
@@ -295,8 +329,9 @@ async function ensureTogglWebhook(ctx: any) {
     configured: true,
     workspaceId,
     callbackUrl,
-    subscriptionId: result.subscription_id ?? matching?.subscription_id ?? null,
+    subscriptionId: subscriptionId ?? null,
     validatedAt: validationTimestamp ?? null,
+    reason,
   };
 }
 
@@ -312,15 +347,58 @@ async function authenticateDevice(ctx: any, body: DeviceAuthBody) {
 }
 
 async function fetchTogglTimeEntry(
-  workspaceId: number,
+  _workspaceId: number,
   timeEntryId: number,
 ): Promise<TogglTimeEntry> {
   const timeEntry = await togglApiRequest<TogglTimeEntry>(
-    `/workspaces/${workspaceId}/time_entries/${timeEntryId}`,
+    `/me/time_entries/${timeEntryId}`,
     {
       method: "GET",
     },
   );
+
+  return {
+    id: timeEntry.id,
+    workspace_id: timeEntry.workspace_id,
+    user_id: timeEntry.user_id ?? undefined,
+    project_id: timeEntry.project_id ?? undefined,
+    task_id: timeEntry.task_id ?? undefined,
+    description: timeEntry.description ?? undefined,
+    tags: timeEntry.tags ?? undefined,
+    billable: timeEntry.billable ?? undefined,
+    start: timeEntry.start,
+    stop: timeEntry.stop ?? undefined,
+    duration: timeEntry.duration ?? undefined,
+    at: timeEntry.at ?? undefined,
+  };
+}
+
+async function fetchCurrentTogglTimeEntry() {
+  const apiToken = getRequiredEnv("TOGGL_API_TOKEN");
+  const response = await fetch(`${TOGGL_API_BASE_URL}/me/time_entries/current`, {
+    method: "GET",
+    headers: {
+      authorization: getBasicAuthHeader(apiToken),
+      "content-type": "application/json",
+    },
+  });
+
+  if (response.status === 404 || response.status === 405) {
+    return null;
+  }
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(
+      `Toggl API request failed (${response.status}): ${errorText}`,
+    );
+  }
+
+  const timeEntry = (await response.json()) as TogglTimeEntry | null;
+
+  if (!timeEntry) {
+    return null;
+  }
 
   return {
     id: timeEntry.id,
@@ -352,7 +430,7 @@ async function validateWebhookIfNeeded(
   await togglRequest<unknown>(
     `/validate/${payload.workspace_id}/${payload.id}/${payload.validation_code}`,
     {
-      method: "POST",
+      method: "GET",
     },
   );
 }
@@ -433,6 +511,83 @@ export const pollDevice = httpAction(async (ctx, request) => {
   } catch (error) {
     return json(500, {
       error: error instanceof Error ? error.message : "Failed to poll device.",
+    });
+  }
+});
+
+export const pullDevice = httpAction(async (ctx, request) => {
+  try {
+    const { body } = await readJson<DeviceAuthBody>(request);
+    const device = await authenticateDevice(ctx, body ?? {});
+    if (!device || !body?.deviceId) {
+      return json(401, { error: "Invalid device credentials." });
+    }
+
+    const integration = await ctx.runQuery(internal.intent.getIntegrationState, {});
+    const state = await ctx.runQuery(internal.intent.getDevicePollState, {
+      deviceId: body.deviceId,
+    });
+    const workspaceId =
+      integration?.togglWorkspaceId ?? getOptionalNumberEnv("TOGGL_WORKSPACE_ID");
+
+    if (!workspaceId || !process.env.TOGGL_API_TOKEN) {
+      return json(400, { error: "Toggl integration is not configured." });
+    }
+
+    let pulled = false;
+    let reason: string | null = null;
+    let session: unknown = null;
+
+    const currentTimeEntry = await fetchCurrentTogglTimeEntry();
+    if (currentTimeEntry && currentTimeEntry.workspace_id === workspaceId) {
+      const result = await ctx.runMutation(internal.intent.upsertSessionFromToggl, {
+        action: "updated",
+        timeEntry: currentTimeEntry,
+      });
+      pulled = true;
+      reason = "Pulled the current Toggl time entry.";
+      session = result.session;
+    } else if (currentTimeEntry) {
+      reason =
+        `The active Toggl timer belongs to workspace ${currentTimeEntry.workspace_id}, not ${workspaceId}.`;
+    }
+
+    const activeSession = state?.activeSession;
+    const activeSourceTimeEntryId = activeSession?.sourceTimeEntryId;
+    const activeWorkspaceId = activeSession?.workspaceId ?? workspaceId;
+    const activeTimeEntryId = Number(activeSourceTimeEntryId);
+
+    if (
+      activeSourceTimeEntryId &&
+      Number.isFinite(activeTimeEntryId) &&
+      activeSourceTimeEntryId !== String(currentTimeEntry?.id ?? "")
+    ) {
+      const syncedTimeEntry = await fetchTogglTimeEntry(activeWorkspaceId, activeTimeEntryId);
+      const result = await ctx.runMutation(internal.intent.upsertSessionFromToggl, {
+        action: "updated",
+        timeEntry: syncedTimeEntry,
+      });
+
+      if (syncedTimeEntry.stop) {
+        pulled = true;
+        reason = "Pulled the recently stopped Toggl time entry.";
+        session = result.session;
+      } else if (!pulled) {
+        pulled = true;
+        reason = "Refreshed the active Toggl time entry from the backend record.";
+        session = result.session;
+      }
+    }
+
+    return json(200, {
+      ok: true,
+      pulled,
+      reason: reason ?? "No active Toggl time entry found.",
+      session,
+    });
+  } catch (error) {
+    return json(500, {
+      error: error instanceof Error ? error.message : "Failed to pull from Toggl.",
     });
   }
 });
@@ -625,8 +780,7 @@ export const togglWebhook = httpAction(async (ctx, request) => {
 
     if (body.validation_code) {
       return json(200, {
-        ok: true,
-        validated: true,
+        validation_code: body.validation_code,
       });
     }
 

@@ -115,6 +115,12 @@ struct IntentDevicePollEnvelope: Decodable {
     let state: IntentDeviceState
 }
 
+struct IntentPullResponse: Decodable {
+    let ok: Bool
+    let pulled: Bool
+    let reason: String?
+}
+
 struct IntentDeviceState: Decodable {
     let device: IntentDeviceInfo
     let integration: IntentIntegrationState

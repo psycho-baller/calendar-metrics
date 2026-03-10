@@ -40,6 +40,12 @@ struct MenuBarView: View {
                 openWindow(id: "main")
             }
 
+            Button("Pull Toggl") {
+                Task {
+                    await model.pullNow()
+                }
+            }
+
             Button("Poll now") {
                 Task {
                     await model.pollOnce()

@@ -44,6 +44,38 @@ Open [http://localhost:3001](http://localhost:3001) in your browser to see the w
 Use the Expo Go app to run the mobile application.
 Your app will connect to the Convex cloud backend automatically.
 
+## Intent macOS + Toggl Setup
+
+The repo now includes a macOS companion app at `apps/Intent` and backend HTTP routes for Toggl-driven focus sessions.
+
+Add these variables to `packages/backend/.env.local` before running Convex:
+
+```bash
+INTENT_SETUP_KEY=choose-a-random-setup-key
+INTENT_PUBLIC_BASE_URL=https://your-convex-site-host
+TOGGL_API_TOKEN=your_toggl_api_token
+TOGGL_WORKSPACE_ID=1234567
+```
+
+Notes:
+
+- `INTENT_PUBLIC_BASE_URL` must be your Convex HTTP actions host, which ends in `.convex.site`. Do not use `CONVEX_URL` (`.convex.cloud`) here because the `/intent/*` routes are served from the site host.
+- `TOGGL_API_TOKEN` and `TOGGL_WORKSPACE_ID` are used to create/update the Toggl webhook subscription automatically.
+- The macOS app calls Raycast Focus via the `shortcuts` CLI, so Raycast Focus shortcuts must already exist on the Mac.
+
+### Intent endpoints
+
+These routes are exposed by Convex:
+
+- `POST /intent/bootstrap`
+- `POST /intent/device/poll`
+- `POST /intent/device/focus/start`
+- `POST /intent/device/focus/complete`
+- `POST /intent/device/review/presented`
+- `POST /intent/device/review/submit`
+- `POST /intent/webhooks/toggl`
+- `GET /intent/health`
+
 ## Project Structure
 
 ```

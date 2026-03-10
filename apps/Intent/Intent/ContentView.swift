@@ -58,6 +58,9 @@ struct ContentView: View {
     private var setupSection: some View {
         Section("Connection") {
             TextField("Backend base URL", text: configBinding(\.backendBaseURL))
+            Text("Use the Convex HTTP actions host, which ends in .convex.site. The app will normalize .convex.cloud to .convex.site automatically.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
 
             SecureField("Setup key", text: configBinding(\.setupKey))
 
@@ -164,6 +167,12 @@ struct ContentView: View {
                 }
             }
 
+            if let lastNotice = model.lastNotice, !lastNotice.isEmpty {
+                Text(lastNotice)
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
             if let lastError = model.lastError, !lastError.isEmpty {
                 Text(lastError)
                     .font(.footnote)
@@ -210,11 +219,24 @@ struct ContentView: View {
     private var controlsSection: some View {
         Section("Actions") {
             HStack {
+                Button("Pull Toggl") {
+                    Task {
+                        await model.pullNow()
+                    }
+                }
+                .disabled(model.isPulling || !model.configuration.isPaired)
+
+                if model.isPulling {
+                    ProgressView()
+                        .controlSize(.small)
+                }
+
                 Button("Poll now") {
                     Task {
                         await model.pollOnce()
                     }
                 }
+                .disabled(model.isPulling || !model.configuration.isPaired)
 
                 if model.deviceState?.pendingReview != nil {
                     Button("Open review") {

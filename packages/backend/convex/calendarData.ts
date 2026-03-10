@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation } from "./_generated/server";
+import type { Id } from "./_generated/dataModel";
 
 export const saveEvents = internalMutation({
   args: {
@@ -9,7 +10,7 @@ export const saveEvents = internalMutation({
         calendarId: v.string(),
         title: v.string(),
         description: v.optional(v.string()),
-        isAllDay: v.boolean(),
+        isAllDay: v.optional(v.boolean()),
         startTime: v.number(),
         endTime: v.number(),
         metrics: v.any(),
@@ -18,18 +19,19 @@ export const saveEvents = internalMutation({
   },
   handler: async (ctx, args) => {
     for (const evt of args.events) {
+      const isAllDay = evt.isAllDay ?? false;
       const existing = await ctx.db
         .query("events")
         .withIndex("by_googleEventId", (q) => q.eq("googleEventId", evt.googleEventId))
         .first();
 
-      let eventId;
+      let eventId: Id<"events">;
       if (existing) {
         eventId = existing._id;
         await ctx.db.patch(existing._id, {
           title: evt.title,
           description: evt.description,
-          isAllDay: evt.isAllDay,
+          isAllDay,
           startTime: evt.startTime,
           endTime: evt.endTime,
         });
@@ -48,7 +50,7 @@ export const saveEvents = internalMutation({
           calendarId: evt.calendarId,
           title: evt.title,
           description: evt.description,
-          isAllDay: evt.isAllDay,
+          isAllDay,
           startTime: evt.startTime,
           endTime: evt.endTime,
         });
@@ -62,5 +64,26 @@ export const saveEvents = internalMutation({
         });
       }
     }
+  },
+});
+
+export const backfillMissingIsAllDay = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const events = await ctx.db.query("events").collect();
+    let patched = 0;
+
+    for (const event of events) {
+      if (event.isAllDay !== undefined) {
+        continue;
+      }
+
+      await ctx.db.patch(event._id, {
+        isAllDay: false,
+      });
+      patched += 1;
+    }
+
+    return { patched };
   },
 });

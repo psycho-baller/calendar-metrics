@@ -76,6 +76,8 @@ export const syncEvents = action({
     calendarId: v.optional(v.string()), // Override calendar ID (optional)
   },
   handler: async (ctx, args) => {
+    await ctx.runMutation(internal.calendarData.backfillMissingIsAllDay, {});
+
     // 1. Get authenticated user
     const user = await authComponent.safeGetAuthUser(ctx);
     if (!user) {
