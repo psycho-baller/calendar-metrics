@@ -78,14 +78,12 @@ struct IntentSubmitReviewRequest: Encodable {
     let deviceId: String
     let deviceSecret: String
     let sessionId: String
-    let focusScore: Int
-    let planAdherence: String
-    let energy: String
-    let distraction: String
+    let numericMetrics: [String: Int]
+    let countMetrics: [String: Int]
+    let booleanMetrics: [String: Bool]
     let taskCategory: String
-    let performanceGrade: Int?
-    let reflection: String?
-    let nextIntent: String?
+    let whatWentWell: String?
+    let whatDidntGoWell: String?
 }
 
 struct IntentBootstrapResponse: Decodable {
@@ -129,6 +127,7 @@ struct IntentDeviceState: Decodable {
     let pendingFocusComplete: IntentSessionSummary?
     let pendingReview: IntentPendingReview?
     let pendingReviewsCount: Int
+    let recentSessions: [IntentDashboardSession]
 }
 
 struct IntentDeviceInfo: Decodable {
@@ -183,14 +182,20 @@ struct IntentSessionSummary: Decodable, Identifiable, Equatable {
 }
 
 struct IntentExistingReview: Decodable, Equatable {
-    let focusScore: Int
-    let planAdherence: String
-    let energy: String
-    let distraction: String
+    let numericMetrics: [String: Int]
+    let countMetrics: [String: Int]
+    let booleanMetrics: [String: Bool]
     let taskCategory: String
-    let performanceGrade: Int?
-    let reflection: String
-    let nextIntent: String
+    let whatWentWell: String
+    let whatDidntGoWell: String
+
+    func numericMetric(_ key: String) -> Int? {
+        numericMetrics[key]
+    }
+
+    func countMetric(_ key: String) -> Int? {
+        countMetrics[key]
+    }
 }
 
 struct IntentPendingReview: Decodable, Identifiable, Equatable {
@@ -220,29 +225,68 @@ struct IntentPendingReview: Decodable, Identifiable, Equatable {
     }
 }
 
+struct IntentDashboardSession: Decodable, Identifiable, Equatable {
+    let id: String
+    let source: String
+    let sourceTimeEntryId: String
+    let workspaceId: Int
+    let togglUserId: Int?
+    let togglProjectId: Int?
+    let togglTaskId: Int?
+    let description: String
+    let tags: [String]
+    let billable: Bool?
+    let startTimeMs: Int
+    let stopTimeMs: Int?
+    let durationMs: Int?
+    let status: String
+    let focusStatus: String
+    let reviewStatus: String
+    let sourceUpdatedAt: Int
+    let createdAt: Int
+    let updatedAt: Int
+    let existingReview: IntentExistingReview?
+
+    var displayTitle: String {
+        description.isEmpty ? "Untitled session" : description
+    }
+}
+
 struct IntentReviewDraft: Equatable {
-    var focusScore = 4
-    var planAdherence = "yes"
-    var energy = "ok"
-    var distraction = "some"
-    var taskCategory = "engineering"
-    var performanceGrade: Int? = 4
-    var reflection = ""
-    var nextIntent = ""
+    var numericMetrics = IntentReviewCatalog.defaultNumericMetrics
+    var countMetrics = IntentReviewCatalog.defaultCountMetrics
+    var booleanMetrics = [String: Bool]()
+    var taskCategory = IntentReviewCatalog.defaultTaskCategory
+    var whatWentWell = ""
+    var whatDidntGoWell = ""
 
     init(existingReview: IntentExistingReview?) {
         guard let existingReview else {
             return
         }
 
-        focusScore = existingReview.focusScore
-        planAdherence = existingReview.planAdherence
-        energy = existingReview.energy
-        distraction = existingReview.distraction
         taskCategory = existingReview.taskCategory
-        performanceGrade = existingReview.performanceGrade
-        reflection = existingReview.reflection
-        nextIntent = existingReview.nextIntent
+        numericMetrics.merge(existingReview.numericMetrics) { _, new in new }
+        countMetrics.merge(existingReview.countMetrics) { _, new in new }
+        booleanMetrics = existingReview.booleanMetrics
+        whatWentWell = existingReview.whatWentWell
+        whatDidntGoWell = existingReview.whatDidntGoWell
+    }
+
+    func numericMetricValue(for key: String) -> Int {
+        numericMetrics[key] ?? IntentReviewCatalog.defaultNumericValue
+    }
+
+    mutating func setNumericMetricValue(_ value: Int, for key: String) {
+        numericMetrics[key] = min(10, max(0, value))
+    }
+
+    func countMetricValue(for key: String) -> Int {
+        countMetrics[key] ?? 0
+    }
+
+    mutating func setCountMetricValue(_ value: Int, for key: String) {
+        countMetrics[key] = max(0, value)
     }
 }
 
@@ -257,4 +301,41 @@ struct IntentReviewContext: Identifiable, Equatable {
 
 struct IntentAPIError: Decodable {
     let error: String
+}
+
+struct IntentReviewMetricDefinition: Identifiable, Hashable {
+    let id: String
+    let title: String
+}
+
+enum IntentReviewCatalog {
+    static let defaultNumericValue = 5
+    static let defaultTaskCategory = "engineering"
+
+    static let numericMetricDefinitions: [IntentReviewMetricDefinition] = [
+        IntentReviewMetricDefinition(id: "mindfulness", title: "Mindfulness"),
+        IntentReviewMetricDefinition(id: "discipline", title: "Discipline"),
+        IntentReviewMetricDefinition(id: "engagement", title: "Engagement"),
+        IntentReviewMetricDefinition(id: "focus", title: "Focus"),
+        IntentReviewMetricDefinition(id: "courage", title: "Courage"),
+        IntentReviewMetricDefinition(id: "authenticity", title: "Authenticity"),
+        IntentReviewMetricDefinition(id: "purpose", title: "Purpose"),
+        IntentReviewMetricDefinition(id: "energy", title: "Energy"),
+        IntentReviewMetricDefinition(id: "communication", title: "Communication"),
+        IntentReviewMetricDefinition(id: "uniqueness", title: "Uniqueness"),
+        IntentReviewMetricDefinition(id: "adherence", title: "Adherence"),
+        IntentReviewMetricDefinition(id: "intentionality", title: "Intentionality"),
+    ]
+
+    static let countMetricDefinitions: [IntentReviewMetricDefinition] = [
+        IntentReviewMetricDefinition(id: "distractions", title: "Distractions"),
+    ]
+
+    static let defaultNumericMetrics = Dictionary(
+        uniqueKeysWithValues: numericMetricDefinitions.map { ($0.id, defaultNumericValue) }
+    )
+
+    static let defaultCountMetrics = Dictionary(
+        uniqueKeysWithValues: countMetricDefinitions.map { ($0.id, 0) }
+    )
 }

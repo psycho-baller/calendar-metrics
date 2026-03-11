@@ -19,14 +19,12 @@ type DeviceAuthBody = {
 
 type ReviewBody = DeviceAuthBody & {
   sessionId?: string;
-  focusScore?: number;
-  planAdherence?: string;
-  energy?: string;
-  distraction?: string;
+  numericMetrics?: Record<string, number>;
+  countMetrics?: Record<string, number>;
+  booleanMetrics?: Record<string, boolean>;
   taskCategory?: string;
-  performanceGrade?: number;
-  reflection?: string;
-  nextIntent?: string;
+  whatWentWell?: string;
+  whatDidntGoWell?: string;
 };
 
 type TogglWebhookPayload = {
@@ -809,15 +807,12 @@ export const submitReview = httpAction(async (ctx, request) => {
   try {
     const { body } = await readJson<ReviewBody>(request);
     const device = await authenticateDevice(ctx, body ?? {});
+    const normalizedCategory = body?.taskCategory?.trim();
 
     if (
       !device ||
       !body?.sessionId ||
-      typeof body.focusScore !== "number" ||
-      !body.planAdherence ||
-      !body.energy ||
-      !body.distraction ||
-      !body.taskCategory
+      !normalizedCategory
     ) {
       return json(400, { error: "Missing required review fields." });
     }
@@ -825,14 +820,12 @@ export const submitReview = httpAction(async (ctx, request) => {
     const session = await ctx.runMutation(internal.intent.submitReview, {
       sessionId: body.sessionId,
       review: {
-        focusScore: body.focusScore,
-        planAdherence: body.planAdherence,
-        energy: body.energy,
-        distraction: body.distraction,
-        taskCategory: body.taskCategory,
-        performanceGrade: body.performanceGrade,
-        reflection: body.reflection,
-        nextIntent: body.nextIntent,
+        numericMetrics: body.numericMetrics ?? {},
+        countMetrics: body.countMetrics ?? {},
+        booleanMetrics: body.booleanMetrics ?? {},
+        taskCategory: normalizedCategory,
+        whatWentWell: body.whatWentWell?.trim() || undefined,
+        whatDidntGoWell: body.whatDidntGoWell?.trim() || undefined,
       },
     });
 

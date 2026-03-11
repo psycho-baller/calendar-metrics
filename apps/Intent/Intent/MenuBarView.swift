@@ -46,7 +46,7 @@ struct MenuBarView: View {
                 }
             }
 
-            Button("Poll now") {
+            Button("Refresh state") {
                 Task {
                     await model.pollOnce()
                 }

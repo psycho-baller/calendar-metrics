@@ -79,6 +79,108 @@ function toSessionSummary(session: Doc<"intentSessions">) {
   };
 }
 
+function parseRecord<T>(
+  rawValue: string | undefined,
+  predicate: (value: unknown) => value is T,
+) {
+  if (!rawValue) {
+    return {} as Record<string, T>;
+  }
+
+  try {
+    const parsed = JSON.parse(rawValue);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return {} as Record<string, T>;
+    }
+
+    return Object.entries(parsed).reduce(
+      (result, [key, value]) => {
+        if (predicate(value)) {
+          result[key] = value;
+        }
+        return result;
+      },
+      {} as Record<string, T>,
+    );
+  } catch {
+    return {} as Record<string, T>;
+  }
+}
+
+function toReviewSummary(review: Doc<"intentSessionReviews"> | null) {
+  if (!review) {
+    return null;
+  }
+
+  const numericMetrics = parseRecord(
+    review.numericMetricsJson,
+    (value): value is number => typeof value === "number" && Number.isFinite(value),
+  );
+  const countMetrics = parseRecord(
+    review.countMetricsJson,
+    (value): value is number => typeof value === "number" && Number.isFinite(value),
+  );
+  const booleanMetrics = parseRecord(
+    review.booleanMetricsJson,
+    (value): value is boolean => typeof value === "boolean",
+  );
+
+  if (typeof review.focusScore === "number" && numericMetrics.focus === undefined) {
+    numericMetrics.focus = Math.max(0, Math.min(10, review.focusScore * 2));
+  }
+
+  if (typeof review.planAdherence === "string" && numericMetrics.adherence === undefined) {
+    switch (review.planAdherence) {
+      case "yes":
+        numericMetrics.adherence = 10;
+        break;
+      case "partly":
+        numericMetrics.adherence = 5;
+        break;
+      case "no":
+        numericMetrics.adherence = 0;
+        break;
+    }
+  }
+
+  if (typeof review.energy === "string" && numericMetrics.energy === undefined) {
+    switch (review.energy) {
+      case "high":
+        numericMetrics.energy = 9;
+        break;
+      case "ok":
+        numericMetrics.energy = 6;
+        break;
+      case "low":
+        numericMetrics.energy = 3;
+        break;
+    }
+  }
+
+  if (typeof review.distraction === "string" && countMetrics.distractions === undefined) {
+    switch (review.distraction) {
+      case "none":
+        countMetrics.distractions = 0;
+        break;
+      case "some":
+        countMetrics.distractions = 2;
+        break;
+      case "a_lot":
+        countMetrics.distractions = 5;
+        break;
+    }
+  }
+
+  return {
+    numericMetrics,
+    countMetrics,
+    booleanMetrics,
+    taskCategory: review.taskCategory ?? "uncategorized",
+    whatWentWell: review.whatWentWell ?? review.reflection ?? "",
+    whatDidntGoWell: review.whatDidntGoWell ?? "",
+  };
+}
+
 function isPendingReviewStatus(status: string) {
   return status === "pending" || status === "presented";
 }
@@ -511,14 +613,57 @@ export const submitReview = internalMutation({
 
     const timestamp = now();
     const reviewData = args.review as {
-      focusScore: number;
-      planAdherence: string;
-      energy: string;
-      distraction: string;
+      numericMetrics?: Record<string, number>;
+      countMetrics?: Record<string, number>;
+      booleanMetrics?: Record<string, boolean>;
       taskCategory: string;
-      performanceGrade?: number;
-      reflection?: string;
-      nextIntent?: string;
+      whatWentWell?: string;
+      whatDidntGoWell?: string;
+    };
+
+    const focusMetric = reviewData.numericMetrics?.focus;
+    const adherenceMetric = reviewData.numericMetrics?.adherence;
+    const energyMetric = reviewData.numericMetrics?.energy;
+    const distractionCount = reviewData.countMetrics?.distractions;
+    const legacyPlanAdherence =
+      typeof adherenceMetric !== "number"
+        ? undefined
+        : adherenceMetric >= 8
+          ? "yes"
+          : adherenceMetric >= 4
+            ? "partly"
+            : "no";
+    const legacyEnergy =
+      typeof energyMetric !== "number"
+        ? undefined
+        : energyMetric >= 8
+          ? "high"
+          : energyMetric >= 4
+            ? "ok"
+            : "low";
+    const legacyDistraction =
+      typeof distractionCount !== "number"
+        ? undefined
+        : distractionCount <= 0
+          ? "none"
+          : distractionCount <= 2
+            ? "some"
+            : "a_lot";
+    const reviewPatch = {
+      taskCategory: reviewData.taskCategory,
+      numericMetricsJson: JSON.stringify(reviewData.numericMetrics ?? {}),
+      countMetricsJson: JSON.stringify(reviewData.countMetrics ?? {}),
+      booleanMetricsJson: JSON.stringify(reviewData.booleanMetrics ?? {}),
+      whatWentWell: reviewData.whatWentWell,
+      whatDidntGoWell: reviewData.whatDidntGoWell,
+      focusScore:
+        typeof focusMetric === "number"
+          ? Math.max(0, Math.min(5, Math.round(focusMetric / 2)))
+          : undefined,
+      planAdherence: legacyPlanAdherence,
+      energy: legacyEnergy,
+      distraction: legacyDistraction,
+      reflection: reviewData.whatWentWell,
     };
 
     const existing = await ctx.db
@@ -528,13 +673,13 @@ export const submitReview = internalMutation({
 
     if (existing) {
       await ctx.db.patch(existing._id, {
-        ...reviewData,
+        ...reviewPatch,
         updatedAt: timestamp,
       });
     } else {
       await ctx.db.insert("intentSessionReviews", {
         sessionId,
-        ...reviewData,
+        ...reviewPatch,
         createdAt: timestamp,
         updatedAt: timestamp,
       });
@@ -614,6 +759,25 @@ export const getDevicePollState = internalQuery({
           .first()
       : null;
 
+    const completedSessionsDesc = await ctx.db
+      .query("intentSessions")
+      .withIndex("by_status_startTimeMs", (q: any) => q.eq("status", "completed"))
+      .order("desc")
+      .collect();
+
+    const recentSessions = [...runningSessions, ...completedSessionsDesc]
+      .sort((left, right) => right.startTimeMs - left.startTimeMs)
+      .slice(0, 16);
+
+    const recentSessionReviews = await Promise.all(
+      recentSessions.map((session) =>
+        ctx.db
+          .query("intentSessionReviews")
+          .withIndex("by_sessionId", (q: any) => q.eq("sessionId", session._id))
+          .first(),
+      ),
+    );
+
     return {
       device: {
         id: device.deviceId,
@@ -648,21 +812,14 @@ export const getDevicePollState = internalQuery({
       pendingReview: pendingReview
         ? {
             ...toSessionSummary(pendingReview),
-            existingReview: activeReviewDoc
-              ? {
-                  focusScore: activeReviewDoc.focusScore,
-                  planAdherence: activeReviewDoc.planAdherence,
-                  energy: activeReviewDoc.energy,
-                  distraction: activeReviewDoc.distraction,
-                  taskCategory: activeReviewDoc.taskCategory,
-                  performanceGrade: activeReviewDoc.performanceGrade ?? null,
-                  reflection: activeReviewDoc.reflection ?? "",
-                  nextIntent: activeReviewDoc.nextIntent ?? "",
-                }
-              : null,
+            existingReview: toReviewSummary(activeReviewDoc),
           }
         : null,
       pendingReviewsCount: pendingReviewSessions.length,
+      recentSessions: recentSessions.map((session, index) => ({
+        ...toSessionSummary(session),
+        existingReview: toReviewSummary(recentSessionReviews[index] ?? null),
+      })),
     };
   },
 });

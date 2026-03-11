@@ -199,14 +199,12 @@ final class IntentAppModel: ObservableObject {
                     deviceId: configuration.deviceId,
                     deviceSecret: configuration.deviceSecret,
                     sessionId: activeReview.session.id,
-                    focusScore: draft.focusScore,
-                    planAdherence: draft.planAdherence,
-                    energy: draft.energy,
-                    distraction: draft.distraction,
+                    numericMetrics: draft.numericMetrics,
+                    countMetrics: draft.countMetrics,
+                    booleanMetrics: draft.booleanMetrics,
                     taskCategory: draft.taskCategory,
-                    performanceGrade: draft.performanceGrade,
-                    reflection: draft.reflection.isEmpty ? nil : draft.reflection,
-                    nextIntent: draft.nextIntent.isEmpty ? nil : draft.nextIntent
+                    whatWentWell: draft.whatWentWell.isEmpty ? nil : draft.whatWentWell,
+                    whatDidntGoWell: draft.whatDidntGoWell.isEmpty ? nil : draft.whatDidntGoWell
                 )
             )
 
