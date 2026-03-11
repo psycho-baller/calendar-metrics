@@ -11,14 +11,23 @@ import SwiftUI
 struct ReviewSheetView: View {
     @Binding var context: IntentReviewContext
     let isSubmitting: Bool
+    let aiConfigured: Bool
     let taskCategorySuggestions: [String]
+    let onExtractCapture: (String) async throws -> IntentReviewAIPatch
     let onSubmit: () -> Void
     let onDismiss: () -> Void
+
+    @State private var isQuickCaptureExpanded = false
+    @State private var quickCaptureText = ""
+    @State private var isExtractingCapture = false
+    @State private var quickCaptureNotice: String?
+    @State private var quickCaptureError: String?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
                 headerSection
+                quickCaptureSection
                 categorySection
                 numericSignalsSection
                 countSignalsSection
@@ -27,8 +36,14 @@ struct ReviewSheetView: View {
             }
             .padding(28)
         }
-        .frame(minWidth: 760, minHeight: 820)
+        .frame(minWidth: 760, minHeight: 900)
         .background(Color(nsColor: .windowBackgroundColor))
+        .onChange(of: context.id) {
+            quickCaptureText = ""
+            quickCaptureNotice = nil
+            quickCaptureError = nil
+            isQuickCaptureExpanded = false
+        }
     }
 
     private var headerSection: some View {
@@ -42,6 +57,141 @@ struct ReviewSheetView: View {
             Text(sessionWindow)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
+        }
+    }
+
+    private var quickCaptureSection: some View {
+        ReviewSectionCard(
+            title: "Quick Capture",
+            subtitle: "Optional. Dump the raw note once and let AI map it into the review."
+        ) {
+            VStack(alignment: .leading, spacing: 14) {
+                Button {
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.9)) {
+                        isQuickCaptureExpanded.toggle()
+                    }
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "wand.and.stars.inverse")
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 36, height: 36)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                                    .fill(
+                                        LinearGradient(
+                                            colors: [.blue, .teal],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        )
+                                    )
+                            )
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(isQuickCaptureExpanded ? "Hide AI capture" : "Show AI capture")
+                                .font(.headline)
+                            Text("Freeform note in, structured review out.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        Spacer()
+
+                        Image(systemName: isQuickCaptureExpanded ? "chevron.up" : "chevron.down")
+                            .font(.headline.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
+                if isQuickCaptureExpanded {
+                    VStack(alignment: .leading, spacing: 14) {
+                        FlexibleBadgeRow(
+                            items: [
+                                "task category",
+                                "signals",
+                                "distractions",
+                                "what went well",
+                                "what didn't go well",
+                            ]
+                        )
+
+                        ZStack(alignment: .topLeading) {
+                            TextEditor(text: $quickCaptureText)
+                                .scrollContentBackground(.hidden)
+                                .frame(minHeight: 150)
+                                .padding(10)
+                                .background(fieldBackground)
+
+                            if quickCaptureText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                Text("Anything you want to remember about the block: what you actually did, where you drifted, what felt strong, what felt off.")
+                                    .font(.body)
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, 24)
+                                    .padding(.vertical, 22)
+                                    .allowsHitTesting(false)
+                            }
+                        }
+
+                        if !aiConfigured {
+                            Text("Add your OpenAI API key in Settings to use AI quick capture.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+
+                        if let quickCaptureNotice, !quickCaptureNotice.isEmpty {
+                            Text(quickCaptureNotice)
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(.teal)
+                        }
+
+                        if let quickCaptureError, !quickCaptureError.isEmpty {
+                            Text(quickCaptureError)
+                                .font(.footnote.weight(.semibold))
+                                .foregroundStyle(.red)
+                        }
+
+                        HStack {
+                            Button("Clear") {
+                                quickCaptureText = ""
+                                quickCaptureNotice = nil
+                                quickCaptureError = nil
+                            }
+                            .disabled(quickCaptureText.isEmpty || isExtractingCapture)
+
+                            Spacer()
+
+                            Button {
+                                Task {
+                                    await extractQuickCapture()
+                                }
+                            } label: {
+                                HStack(spacing: 8) {
+                                    if isExtractingCapture {
+                                        ProgressView()
+                                            .controlSize(.small)
+                                    }
+
+                                    Text(isExtractingCapture ? "Extracting..." : "Extract into review")
+                                }
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(
+                                isExtractingCapture ||
+                                !aiConfigured ||
+                                quickCaptureText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                            )
+                        }
+                    }
+                    .transition(
+                        .asymmetric(
+                            insertion: .move(edge: .top).combined(with: .opacity),
+                            removal: .opacity
+                        )
+                    )
+                }
+            }
         }
     }
 
@@ -93,6 +243,7 @@ struct ReviewSheetView: View {
                     Text("What went well. And why")
                         .font(.headline)
                     TextEditor(text: draftBinding(\.whatWentWell))
+                        .scrollContentBackground(.hidden)
                         .frame(minHeight: 120)
                         .padding(10)
                         .background(fieldBackground)
@@ -102,6 +253,7 @@ struct ReviewSheetView: View {
                     Text("What didn't go well. And why")
                         .font(.headline)
                     TextEditor(text: draftBinding(\.whatDidntGoWell))
+                        .scrollContentBackground(.hidden)
                         .frame(minHeight: 120)
                         .padding(10)
                         .background(fieldBackground)
@@ -166,6 +318,40 @@ struct ReviewSheetView: View {
         return "\(startText) - \(stopText)"
     }
 
+    @MainActor
+    private func extractQuickCapture() async {
+        guard !isExtractingCapture else {
+            return
+        }
+
+        isExtractingCapture = true
+        quickCaptureNotice = nil
+        quickCaptureError = nil
+
+        defer {
+            isExtractingCapture = false
+        }
+
+        do {
+            let patch = try await onExtractCapture(quickCaptureText)
+
+            guard !patch.isEmpty else {
+                quickCaptureNotice = "Nothing was strong enough to apply yet. Add a little more detail or set the fields manually."
+                return
+            }
+
+            context.draft.apply(patch)
+
+            let labels = Array(patch.appliedLabels.prefix(4))
+            let suffix = patch.appliedLabels.count > labels.count
+                ? " +\(patch.appliedLabels.count - labels.count) more"
+                : ""
+            quickCaptureNotice = "Applied \(labels.joined(separator: ", "))\(suffix)."
+        } catch {
+            quickCaptureError = error.localizedDescription
+        }
+    }
+
     private func tint(for metricID: String) -> Color {
         switch metricID {
         case "focus":
@@ -221,6 +407,29 @@ struct ReviewSheetView: View {
         formatter.timeStyle = .short
         return formatter
     }()
+}
+
+private struct FlexibleBadgeRow: View {
+    let items: [String]
+
+    var body: some View {
+        FlowLayout(horizontalSpacing: 8, verticalSpacing: 8) {
+            ForEach(items, id: \.self) { item in
+                Text(item)
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(
+                        Capsule(style: .continuous)
+                            .fill(Color.primary.opacity(0.06))
+                            .overlay(
+                                Capsule(style: .continuous)
+                                    .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
+                            )
+                    )
+            }
+        }
+    }
 }
 
 private struct ReviewSectionCard<Content: View>: View {
@@ -383,5 +592,63 @@ private struct CountMetricSliderRow: View {
 
     private var valueLabel: String {
         value >= 10 ? "10+" : "\(value)"
+    }
+}
+
+private struct FlowLayout: Layout {
+    let horizontalSpacing: CGFloat
+    let verticalSpacing: CGFloat
+
+    func sizeThatFits(
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) -> CGSize {
+        let maxWidth = proposal.width ?? 600
+        var currentX: CGFloat = 0
+        var currentY: CGFloat = 0
+        var rowHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if currentX + size.width > maxWidth, currentX > 0 {
+                currentX = 0
+                currentY += rowHeight + verticalSpacing
+                rowHeight = 0
+            }
+
+            rowHeight = max(rowHeight, size.height)
+            currentX += size.width + horizontalSpacing
+        }
+
+        return CGSize(width: maxWidth, height: currentY + rowHeight)
+    }
+
+    func placeSubviews(
+        in bounds: CGRect,
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) {
+        var currentX = bounds.minX
+        var currentY = bounds.minY
+        var rowHeight: CGFloat = 0
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(.unspecified)
+            if currentX + size.width > bounds.maxX, currentX > bounds.minX {
+                currentX = bounds.minX
+                currentY += rowHeight + verticalSpacing
+                rowHeight = 0
+            }
+
+            subview.place(
+                at: CGPoint(x: currentX, y: currentY),
+                proposal: ProposedViewSize(width: size.width, height: size.height)
+            )
+
+            rowHeight = max(rowHeight, size.height)
+            currentX += size.width + horizontalSpacing
+        }
     }
 }

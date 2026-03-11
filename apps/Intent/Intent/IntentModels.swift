@@ -288,6 +288,54 @@ struct IntentReviewDraft: Equatable {
     mutating func setCountMetricValue(_ value: Int, for key: String) {
         countMetrics[key] = max(0, value)
     }
+
+    mutating func apply(_ patch: IntentReviewAIPatch) {
+        if let taskCategory = patch.taskCategory?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !taskCategory.isEmpty {
+            self.taskCategory = taskCategory
+        }
+
+        for (key, value) in patch.numericMetrics {
+            setNumericMetricValue(value, for: key)
+        }
+
+        for (key, value) in patch.countMetrics {
+            setCountMetricValue(value, for: key)
+        }
+
+        for (key, value) in patch.booleanMetrics {
+            booleanMetrics[key] = value
+        }
+
+        if let whatWentWell = patch.whatWentWell?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !whatWentWell.isEmpty {
+            self.whatWentWell = Self.merge(existing: self.whatWentWell, incoming: whatWentWell)
+        }
+
+        if let whatDidntGoWell = patch.whatDidntGoWell?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !whatDidntGoWell.isEmpty {
+            self.whatDidntGoWell = Self.merge(existing: self.whatDidntGoWell, incoming: whatDidntGoWell)
+        }
+    }
+
+    private static func merge(existing: String, incoming: String) -> String {
+        let trimmedExisting = existing.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedIncoming = incoming.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        guard !trimmedIncoming.isEmpty else {
+            return trimmedExisting
+        }
+
+        guard !trimmedExisting.isEmpty else {
+            return trimmedIncoming
+        }
+
+        guard trimmedExisting != trimmedIncoming else {
+            return trimmedExisting
+        }
+
+        return "\(trimmedExisting)\n\n\(trimmedIncoming)"
+    }
 }
 
 struct IntentReviewContext: Identifiable, Equatable {
@@ -309,10 +357,10 @@ struct IntentReviewMetricDefinition: Identifiable, Hashable {
 }
 
 enum IntentReviewCatalog {
-    static let defaultNumericValue = 5
-    static let defaultTaskCategory = "engineering"
+    nonisolated static let defaultNumericValue = 5
+    nonisolated static let defaultTaskCategory = "engineering"
 
-    static let numericMetricDefinitions: [IntentReviewMetricDefinition] = [
+    nonisolated static let numericMetricDefinitions: [IntentReviewMetricDefinition] = [
         IntentReviewMetricDefinition(id: "mindfulness", title: "Mindfulness"),
         IntentReviewMetricDefinition(id: "discipline", title: "Discipline"),
         IntentReviewMetricDefinition(id: "engagement", title: "Engagement"),
@@ -327,15 +375,27 @@ enum IntentReviewCatalog {
         IntentReviewMetricDefinition(id: "intentionality", title: "Intentionality"),
     ]
 
-    static let countMetricDefinitions: [IntentReviewMetricDefinition] = [
+    nonisolated static let countMetricDefinitions: [IntentReviewMetricDefinition] = [
         IntentReviewMetricDefinition(id: "distractions", title: "Distractions"),
     ]
 
-    static let defaultNumericMetrics = Dictionary(
+    nonisolated static let defaultNumericMetrics = Dictionary(
         uniqueKeysWithValues: numericMetricDefinitions.map { ($0.id, defaultNumericValue) }
     )
 
-    static let defaultCountMetrics = Dictionary(
+    nonisolated static let defaultCountMetrics = Dictionary(
         uniqueKeysWithValues: countMetricDefinitions.map { ($0.id, 0) }
     )
+
+    nonisolated static func title(for key: String) -> String {
+        if let metric = numericMetricDefinitions.first(where: { $0.id == key }) {
+            return metric.title
+        }
+
+        if let metric = countMetricDefinitions.first(where: { $0.id == key }) {
+            return metric.title
+        }
+
+        return key
+    }
 }

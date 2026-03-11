@@ -22,6 +22,7 @@ final class IntentAppModel: ObservableObject {
     @Published var isBootstrapping = false
     @Published var isSubmittingReview = false
     @Published var isPulling = false
+    @Published var openAIAPIKey: String
     @Published var connectionStatus = "Needs setup"
     @Published var lastError: String?
     @Published var lastNotice: String?
@@ -44,6 +45,7 @@ final class IntentAppModel: ObservableObject {
     init() {
         let configuration = IntentLocalConfiguration.load()
         self.configuration = configuration
+        self.openAIAPIKey = IntentSecretStore.openAIAPIKey() ?? ""
         if configuration.isPaired {
             connectionStatus = "Ready"
         }
@@ -59,6 +61,10 @@ final class IntentAppModel: ObservableObject {
 
     var pendingReviewsCount: Int {
         deviceState?.pendingReviewsCount ?? 0
+    }
+
+    var isAIConfigured: Bool {
+        !openAIAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     func start() {
@@ -253,6 +259,28 @@ final class IntentAppModel: ObservableObject {
         connectionStatus = "Needs setup"
         lastError = nil
         lastNotice = nil
+    }
+
+    func setOpenAIAPIKey(_ value: String) {
+        do {
+            try IntentSecretStore.setOpenAIAPIKey(value)
+            openAIAPIKey = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        } catch {
+            lastNotice = nil
+            lastError = displayMessage(for: error)
+        }
+    }
+
+    func extractReviewDraft(
+        from text: String,
+        for session: IntentPendingReview,
+        taskCategorySuggestions: [String]
+    ) async throws -> IntentReviewAIPatch {
+        try await IntentReviewExtractionService().extract(
+            from: text,
+            session: session,
+            taskCategorySuggestions: taskCategorySuggestions
+        )
     }
 
     private var deviceSettingsPayload: IntentDeviceSettingsPayload {

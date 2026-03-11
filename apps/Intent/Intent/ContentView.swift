@@ -95,7 +95,15 @@ struct ContentView: View {
                 ReviewSheetView(
                     context: reviewBinding,
                     isSubmitting: model.isSubmittingReview,
+                    aiConfigured: model.isAIConfigured,
                     taskCategorySuggestions: taskCategorySuggestions,
+                    onExtractCapture: { text in
+                        try await model.extractReviewDraft(
+                            from: text,
+                            for: reviewBinding.wrappedValue.session,
+                            taskCategorySuggestions: taskCategorySuggestions
+                        )
+                    },
                     onSubmit: {
                         Task {
                             await model.submitActiveReview()
@@ -417,6 +425,7 @@ struct ContentView: View {
             Form {
                 connectionSection
                 automationSection
+                aiSection
                 deviceSection
                 backendSection
                 toolsSection
@@ -474,6 +483,21 @@ struct ContentView: View {
 
             TextField("Start shortcut name", text: configBinding(\.startShortcutName))
             TextField("Complete shortcut name", text: configBinding(\.completeShortcutName))
+        }
+    }
+
+    private var aiSection: some View {
+        Section("AI Assist") {
+            SecureField("OpenAI API key", text: openAIAPIKeyBinding)
+
+            LabeledContent("Status") {
+                Text(model.isAIConfigured ? "Configured" : "Not configured")
+                    .foregroundStyle(model.isAIConfigured ? .primary : .secondary)
+            }
+
+            Text("Optional. The review sheet can use one freeform note to populate task category, review signals, distractions, and reflection text. Nothing is auto-submitted.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -777,6 +801,17 @@ struct ContentView: View {
                 model.updateConfiguration { configuration in
                     configuration[keyPath: keyPath] = newValue
                 }
+            }
+        )
+    }
+
+    private var openAIAPIKeyBinding: Binding<String> {
+        Binding(
+            get: {
+                model.openAIAPIKey
+            },
+            set: { newValue in
+                model.setOpenAIAPIKey(newValue)
             }
         )
     }
