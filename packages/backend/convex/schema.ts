@@ -20,6 +20,29 @@ export default defineSchema({
     .index("by_eventId", ["eventId"])
     .index("by_key", ["key"]),
 
+  metricObservations: defineTable({
+    subjectType: v.string(),
+    subjectId: v.string(),
+    eventId: v.optional(v.id("events")),
+    sessionId: v.optional(v.id("intentSessions")),
+    calendarId: v.optional(v.string()),
+    workspaceId: v.optional(v.number()),
+    key: v.string(),
+    valueType: v.string(),
+    numberValue: v.optional(v.number()),
+    booleanValue: v.optional(v.boolean()),
+    stringValue: v.optional(v.string()),
+    subjectTitle: v.string(),
+    observedAt: v.number(),
+    source: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_subjectType_subjectId", ["subjectType", "subjectId"])
+    .index("by_calendarId_observedAt", ["calendarId", "observedAt"])
+    .index("by_subjectType_observedAt", ["subjectType", "observedAt"])
+    .index("by_key_observedAt", ["key", "observedAt"]),
+
   userSecrets: defineTable({
     userId: v.string(), // Links to Better Auth user ID
     key: v.string(), // e.g. "google_refresh_token"
@@ -103,14 +126,7 @@ export default defineSchema({
 
   intentSessionReviews: defineTable({
     sessionId: v.id("intentSessions"),
-    focusScore: v.optional(v.number()),
-    planAdherence: v.optional(v.string()),
-    energy: v.optional(v.string()),
-    distraction: v.optional(v.string()),
     taskCategory: v.optional(v.string()),
-    performanceGrade: v.optional(v.number()),
-    reflection: v.optional(v.string()),
-    nextIntent: v.optional(v.string()),
     numericMetricsJson: v.optional(v.string()),
     countMetricsJson: v.optional(v.string()),
     booleanMetricsJson: v.optional(v.string()),

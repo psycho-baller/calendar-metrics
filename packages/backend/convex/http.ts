@@ -6,6 +6,7 @@ import {
   acknowledgeFocusStart,
   acknowledgeReviewPresented,
   bootstrap,
+  deviceMetrics,
   health,
   pullDevice,
   pollDevice,
@@ -27,6 +28,12 @@ http.route({
   path: "/intent/device/poll",
   method: "POST",
   handler: pollDevice,
+});
+
+http.route({
+  path: "/intent/device/metrics",
+  method: "POST",
+  handler: deviceMetrics,
 });
 
 http.route({

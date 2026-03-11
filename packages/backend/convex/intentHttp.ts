@@ -17,6 +17,10 @@ type DeviceAuthBody = {
   settings?: Record<string, unknown>;
 };
 
+type DeviceMetricsBody = DeviceAuthBody & {
+  windowDays?: number;
+};
+
 type ReviewBody = DeviceAuthBody & {
   sessionId?: string;
   numericMetrics?: Record<string, number>;
@@ -463,15 +467,6 @@ function readString(source: Record<string, unknown> | null, key: string) {
   return typeof value === "string" ? value : undefined;
 }
 
-function readNumber(source: Record<string, unknown> | null, key: string) {
-  if (!source) {
-    return undefined;
-  }
-
-  const value = source[key];
-  return typeof value === "number" ? value : undefined;
-}
-
 function readNumberish(source: Record<string, unknown> | null, key: string) {
   if (!source) {
     return undefined;
@@ -637,6 +632,30 @@ export const pollDevice = httpAction(async (ctx, request) => {
   } catch (error) {
     return json(500, {
       error: error instanceof Error ? error.message : "Failed to poll device.",
+    });
+  }
+});
+
+export const deviceMetrics = httpAction(async (ctx, request) => {
+  try {
+    const { body } = await readJson<DeviceMetricsBody>(request);
+    const device = await authenticateDevice(ctx, body ?? {});
+    if (!device) {
+      return json(401, { error: "Invalid device credentials." });
+    }
+
+    const state = await ctx.runQuery(internal.intent.getDeviceMetricsState, {
+      windowDays: body?.windowDays,
+    });
+
+    return json(200, {
+      ok: true,
+      state,
+    });
+  } catch (error) {
+    return json(500, {
+      error:
+        error instanceof Error ? error.message : "Failed to load device metrics.",
     });
   }
 });

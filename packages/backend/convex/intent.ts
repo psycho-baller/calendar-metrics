@@ -5,8 +5,46 @@ import {
   internalMutation,
   internalQuery,
 } from "./_generated/server";
+import {
+  replaceMetricObservationsForEvent,
+  replaceMetricObservationsForIntentSession,
+} from "./metricObservations";
 
 const DEFAULT_INTEGRATION_SLUG = "default";
+const DEFAULT_METRICS_WINDOW_DAYS = 21;
+const MIN_METRICS_WINDOW_DAYS = 7;
+const MAX_METRICS_WINDOW_DAYS = 90;
+const INTENT_COUNT_METRIC_KEYS = new Set(["distractions"]);
+const INTENT_SIGNAL_ORDER = [
+  "focus",
+  "discipline",
+  "engagement",
+  "mindfulness",
+  "energy",
+  "intentionality",
+  "adherence",
+  "purpose",
+  "courage",
+  "authenticity",
+  "communication",
+  "uniqueness",
+] as const;
+const INTENT_METRIC_TITLES: Record<string, string> = {
+  mindfulness: "Mindfulness",
+  discipline: "Discipline",
+  engagement: "Engagement",
+  focus: "Focus",
+  courage: "Courage",
+  authenticity: "Authenticity",
+  purpose: "Purpose",
+  energy: "Energy",
+  communication: "Communication",
+  uniqueness: "Uniqueness",
+  adherence: "Adherence",
+  intentionality: "Intentionality",
+  distractions: "Distractions",
+  taskCategory: "Task Category",
+};
 
 type DeviceSettings = {
   autoStartFocus?: boolean;
@@ -107,11 +145,7 @@ function parseRecord<T>(
   }
 }
 
-function toReviewSummary(review: Doc<"intentSessionReviews"> | null) {
-  if (!review) {
-    return null;
-  }
-
+function normalizedReviewPayload(review: Doc<"intentSessionReviews">) {
   const numericMetrics = parseRecord(
     review.numericMetricsJson,
     (value): value is number => typeof value === "number" && Number.isFinite(value),
@@ -125,64 +159,117 @@ function toReviewSummary(review: Doc<"intentSessionReviews"> | null) {
     (value): value is boolean => typeof value === "boolean",
   );
 
-  if (typeof review.focusScore === "number" && numericMetrics.focus === undefined) {
-    numericMetrics.focus = Math.max(0, Math.min(10, review.focusScore * 2));
-  }
-
-  if (typeof review.planAdherence === "string" && numericMetrics.adherence === undefined) {
-    switch (review.planAdherence) {
-      case "yes":
-        numericMetrics.adherence = 10;
-        break;
-      case "partly":
-        numericMetrics.adherence = 5;
-        break;
-      case "no":
-        numericMetrics.adherence = 0;
-        break;
-    }
-  }
-
-  if (typeof review.energy === "string" && numericMetrics.energy === undefined) {
-    switch (review.energy) {
-      case "high":
-        numericMetrics.energy = 9;
-        break;
-      case "ok":
-        numericMetrics.energy = 6;
-        break;
-      case "low":
-        numericMetrics.energy = 3;
-        break;
-    }
-  }
-
-  if (typeof review.distraction === "string" && countMetrics.distractions === undefined) {
-    switch (review.distraction) {
-      case "none":
-        countMetrics.distractions = 0;
-        break;
-      case "some":
-        countMetrics.distractions = 2;
-        break;
-      case "a_lot":
-        countMetrics.distractions = 5;
-        break;
-    }
-  }
-
   return {
     numericMetrics,
     countMetrics,
     booleanMetrics,
     taskCategory: review.taskCategory ?? "uncategorized",
-    whatWentWell: review.whatWentWell ?? review.reflection ?? "",
+    whatWentWell: review.whatWentWell ?? "",
     whatDidntGoWell: review.whatDidntGoWell ?? "",
   };
 }
 
+function toReviewSummary(review: Doc<"intentSessionReviews"> | null) {
+  if (!review) {
+    return null;
+  }
+
+  return normalizedReviewPayload(review);
+}
+
 function isPendingReviewStatus(status: string) {
   return status === "pending" || status === "presented";
+}
+
+function clampMetricsWindowDays(value?: number) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return DEFAULT_METRICS_WINDOW_DAYS;
+  }
+
+  return Math.min(MAX_METRICS_WINDOW_DAYS, Math.max(MIN_METRICS_WINDOW_DAYS, Math.round(value)));
+}
+
+function roundMetric(value: number, digits = 1) {
+  const factor = 10 ** digits;
+  return Math.round(value * factor) / factor;
+}
+
+function averageOf(values: number[]) {
+  if (values.length === 0) {
+    return 0;
+  }
+
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
+function sessionDurationMs(session: Doc<"intentSessions">) {
+  if (typeof session.durationMs === "number" && Number.isFinite(session.durationMs)) {
+    return session.durationMs;
+  }
+
+  if (typeof session.stopTimeMs === "number") {
+    return Math.max(0, session.stopTimeMs - session.startTimeMs);
+  }
+
+  return 0;
+}
+
+function metricTitle(key: string) {
+  if (INTENT_METRIC_TITLES[key]) {
+    return INTENT_METRIC_TITLES[key];
+  }
+
+  return key
+    .replace(/([a-z])([A-Z])/g, "$1 $2")
+    .replace(/[_-]+/g, " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function metricSortIndex(key: string) {
+  const index = INTENT_SIGNAL_ORDER.indexOf(key as (typeof INTENT_SIGNAL_ORDER)[number]);
+  return index >= 0 ? index : INTENT_SIGNAL_ORDER.length + 1;
+}
+
+function observedDayKey(timestamp: number) {
+  const date = new Date(timestamp);
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function computeDayStreak(dayKeys: string[]) {
+  const sortedKeys = [...new Set(dayKeys)].sort((left, right) =>
+    left < right ? 1 : left > right ? -1 : 0,
+  );
+
+  if (sortedKeys.length === 0) {
+    return 0;
+  }
+
+  let streak = 1;
+  let previousDate = new Date(`${sortedKeys[0]}T00:00:00.000Z`);
+
+  for (const key of sortedKeys.slice(1)) {
+    const currentDate = new Date(`${key}T00:00:00.000Z`);
+    const differenceDays = Math.round(
+      (previousDate.getTime() - currentDate.getTime()) / (24 * 60 * 60 * 1000),
+    );
+
+    if (differenceDays !== 1) {
+      break;
+    }
+
+    streak += 1;
+    previousDate = currentDate;
+  }
+
+  return streak;
+}
+
+function startOfUTCDay(timestamp: number) {
+  const date = new Date(timestamp);
+  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
 }
 
 async function getIntegrationDoc(ctx: any) {
@@ -621,34 +708,6 @@ export const submitReview = internalMutation({
       whatDidntGoWell?: string;
     };
 
-    const focusMetric = reviewData.numericMetrics?.focus;
-    const adherenceMetric = reviewData.numericMetrics?.adherence;
-    const energyMetric = reviewData.numericMetrics?.energy;
-    const distractionCount = reviewData.countMetrics?.distractions;
-    const legacyPlanAdherence =
-      typeof adherenceMetric !== "number"
-        ? undefined
-        : adherenceMetric >= 8
-          ? "yes"
-          : adherenceMetric >= 4
-            ? "partly"
-            : "no";
-    const legacyEnergy =
-      typeof energyMetric !== "number"
-        ? undefined
-        : energyMetric >= 8
-          ? "high"
-          : energyMetric >= 4
-            ? "ok"
-            : "low";
-    const legacyDistraction =
-      typeof distractionCount !== "number"
-        ? undefined
-        : distractionCount <= 0
-          ? "none"
-          : distractionCount <= 2
-            ? "some"
-            : "a_lot";
     const reviewPatch = {
       taskCategory: reviewData.taskCategory,
       numericMetricsJson: JSON.stringify(reviewData.numericMetrics ?? {}),
@@ -656,14 +715,6 @@ export const submitReview = internalMutation({
       booleanMetricsJson: JSON.stringify(reviewData.booleanMetrics ?? {}),
       whatWentWell: reviewData.whatWentWell,
       whatDidntGoWell: reviewData.whatDidntGoWell,
-      focusScore:
-        typeof focusMetric === "number"
-          ? Math.max(0, Math.min(5, Math.round(focusMetric / 2)))
-          : undefined,
-      planAdherence: legacyPlanAdherence,
-      energy: legacyEnergy,
-      distraction: legacyDistraction,
-      reflection: reviewData.whatWentWell,
     };
 
     const existing = await ctx.db
@@ -685,6 +736,13 @@ export const submitReview = internalMutation({
       });
     }
 
+    await replaceMetricObservationsForIntentSession(ctx, session, {
+      numericMetrics: reviewData.numericMetrics ?? {},
+      countMetrics: reviewData.countMetrics ?? {},
+      booleanMetrics: reviewData.booleanMetrics ?? {},
+      taskCategory: reviewData.taskCategory,
+    });
+
     await ctx.db.patch(sessionId, {
       reviewStatus: "submitted",
       reviewSubmittedAt: timestamp,
@@ -692,6 +750,63 @@ export const submitReview = internalMutation({
     });
 
     return await ctx.db.get(sessionId);
+  },
+});
+
+export const rebuildUnifiedMetricObservations = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const existingObservations = await ctx.db.query("metricObservations").collect();
+    for (const observation of existingObservations) {
+      await ctx.db.delete(observation._id);
+    }
+
+    const events = await ctx.db.query("events").collect();
+    let rebuiltEventSubjects = 0;
+    for (const event of events) {
+      const metrics = await ctx.db
+        .query("metricValues")
+        .withIndex("by_eventId", (q: any) => q.eq("eventId", event._id))
+        .collect();
+
+      if (metrics.length === 0) {
+        continue;
+      }
+
+      await replaceMetricObservationsForEvent(
+        ctx,
+        event,
+        metrics.reduce(
+          (acc, metric) => {
+            acc[metric.key] = metric.value;
+            return acc;
+          },
+          {} as Record<string, number | boolean | string>,
+        ),
+      );
+      rebuiltEventSubjects += 1;
+    }
+
+    const reviews = await ctx.db.query("intentSessionReviews").collect();
+    let rebuiltSessionSubjects = 0;
+    for (const review of reviews) {
+      const session = await ctx.db.get(review.sessionId);
+      if (!session) {
+        continue;
+      }
+
+      const normalized = normalizedReviewPayload(review);
+      await replaceMetricObservationsForIntentSession(ctx, session, normalized);
+      rebuiltSessionSubjects += 1;
+    }
+
+    const totalObservations = (await ctx.db.query("metricObservations").collect()).length;
+    return {
+      ok: true,
+      rebuiltEventSubjects,
+      rebuiltSessionSubjects,
+      totalObservations,
+    };
   },
 });
 
@@ -820,6 +935,281 @@ export const getDevicePollState = internalQuery({
         ...toSessionSummary(session),
         existingReview: toReviewSummary(recentSessionReviews[index] ?? null),
       })),
+    };
+  },
+});
+
+export const getDeviceMetricsState = internalQuery({
+  args: {
+    windowDays: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const timestamp = now();
+    const windowDays = clampMetricsWindowDays(args.windowDays);
+    const cutoffTime = timestamp - windowDays * 24 * 60 * 60 * 1000;
+
+    const reviewedSessionsDesc = await ctx.db
+      .query("intentSessions")
+      .withIndex("by_reviewStatus_updatedAt", (q: any) => q.eq("reviewStatus", "submitted"))
+      .order("desc")
+      .collect();
+    const completedSessionsDesc = await ctx.db
+      .query("intentSessions")
+      .withIndex("by_status_startTimeMs", (q: any) => q.eq("status", "completed"))
+      .order("desc")
+      .collect();
+
+    const pendingReviewSessions = (
+      await Promise.all(
+        ["pending", "presented"].map((status) =>
+          ctx.db
+            .query("intentSessions")
+            .withIndex("by_reviewStatus_updatedAt", (q: any) =>
+              q.eq("reviewStatus", status),
+            )
+            .collect(),
+        ),
+      )
+    ).flat();
+
+    const relevantReviewedSessions = reviewedSessionsDesc.filter(
+      (session) => (session.stopTimeMs ?? session.startTimeMs) >= cutoffTime,
+    );
+    const relevantCompletedSessions = completedSessionsDesc.filter(
+      (session) => (session.stopTimeMs ?? session.startTimeMs) >= cutoffTime,
+    );
+
+    const observations = (
+      await ctx.db
+        .query("metricObservations")
+        .withIndex("by_subjectType_observedAt", (q: any) =>
+          q.eq("subjectType", "intentSession"),
+        )
+        .collect()
+    )
+      .filter((observation) => observation.observedAt >= cutoffTime)
+      .sort((left, right) => left.observedAt - right.observedAt);
+
+    const signalBuckets = new Map<string, number[]>();
+    const categoryCounts = new Map<string, number>();
+
+    for (const observation of observations) {
+      if (observation.valueType === "number" && typeof observation.numberValue === "number") {
+        const existing = signalBuckets.get(observation.key) ?? [];
+        existing.push(observation.numberValue);
+        signalBuckets.set(observation.key, existing);
+      }
+
+      if (
+        observation.key === "taskCategory" &&
+        observation.valueType === "string" &&
+        typeof observation.stringValue === "string" &&
+        observation.stringValue.trim().length > 0
+      ) {
+        const normalized = observation.stringValue.trim();
+        categoryCounts.set(normalized, (categoryCounts.get(normalized) ?? 0) + 1);
+      }
+    }
+
+    const signalAverages = [...signalBuckets.entries()]
+      .filter(([key]) => !INTENT_COUNT_METRIC_KEYS.has(key))
+      .map(([key, values]) => {
+        const recentSlice = values.slice(-Math.min(4, values.length));
+        const previousSlice = values.slice(
+          Math.max(0, values.length - recentSlice.length * 2),
+          Math.max(0, values.length - recentSlice.length),
+        );
+        const average = roundMetric(averageOf(values));
+        const previousAverage =
+          previousSlice.length > 0 ? roundMetric(averageOf(previousSlice)) : null;
+
+        return {
+          id: key,
+          key,
+          title: metricTitle(key),
+          average,
+          count: values.length,
+          deltaFromPrevious:
+            previousAverage === null ? null : roundMetric(average - previousAverage),
+        };
+      })
+      .sort((left, right) => {
+        const leftIndex = metricSortIndex(left.key);
+        const rightIndex = metricSortIndex(right.key);
+        if (leftIndex !== rightIndex) {
+          return leftIndex - rightIndex;
+        }
+        return left.title.localeCompare(right.title);
+      });
+
+    const dominantCategory = [...categoryCounts.entries()].sort((left, right) => {
+      if (left[1] === right[1]) {
+        return left[0].localeCompare(right[0]);
+      }
+      return right[1] - left[1];
+    })[0]?.[0] ?? null;
+
+    const totalCategoryCount = [...categoryCounts.values()].reduce(
+      (sum, value) => sum + value,
+      0,
+    );
+    const categoryBreakdown = [...categoryCounts.entries()]
+      .sort((left, right) => {
+        if (left[1] === right[1]) {
+          return left[0].localeCompare(right[0]);
+        }
+        return right[1] - left[1];
+      })
+      .slice(0, 6)
+      .map(([category, count]) => ({
+        id: category,
+        key: category,
+        label: category,
+        count,
+        share: totalCategoryCount > 0 ? roundMetric((count / totalCategoryCount) * 100) : 0,
+      }));
+
+    const reviewedSessionCards = (
+      await Promise.all(
+        relevantReviewedSessions.slice(0, 14).map(async (session) => {
+          const review = await ctx.db
+            .query("intentSessionReviews")
+            .withIndex("by_sessionId", (q: any) => q.eq("sessionId", session._id))
+            .first();
+          if (!review) {
+            return null;
+          }
+
+          const normalized = normalizedReviewPayload(review);
+          return {
+            id: session._id,
+            sessionId: session._id,
+            title: session.description ?? "Untitled session",
+            observedAt: session.startTimeMs,
+            durationMs: sessionDurationMs(session),
+            taskCategory: normalized.taskCategory,
+            metrics: {
+              ...Object.fromEntries(
+                Object.entries(normalized.numericMetrics).map(([key, value]) => [key, value]),
+              ),
+              ...Object.fromEntries(
+                Object.entries(normalized.countMetrics).map(([key, value]) => [key, value]),
+              ),
+            },
+            focus: normalized.numericMetrics.focus ?? null,
+            energy: normalized.numericMetrics.energy ?? null,
+            distractions: normalized.countMetrics.distractions ?? null,
+            whatWentWell: normalized.whatWentWell,
+            whatDidntGoWell: normalized.whatDidntGoWell,
+          };
+        }),
+      )
+    ).filter(
+      (
+        card,
+      ): card is {
+        id: string;
+        sessionId: string;
+        title: string;
+        observedAt: number;
+        durationMs: number;
+        taskCategory: string;
+        metrics: Record<string, number>;
+        focus: number | null;
+        energy: number | null;
+        distractions: number | null;
+        whatWentWell: string;
+        whatDidntGoWell: string;
+      } => card !== null,
+    );
+
+    const trendSeries = [...reviewedSessionCards]
+      .sort((left, right) => left.observedAt - right.observedAt)
+      .slice(-12)
+      .map((card) => ({
+        id: card.id,
+        sessionId: card.sessionId,
+        title: card.title,
+        observedAt: card.observedAt,
+        durationMs: card.durationMs,
+        taskCategory: card.taskCategory,
+        metrics: card.metrics,
+      }));
+
+    const reflectionHighlights = reviewedSessionCards.slice(0, 4).map((card) => ({
+      id: card.id,
+      sessionId: card.sessionId,
+      title: card.title,
+      observedAt: card.observedAt,
+      taskCategory: card.taskCategory,
+      focus: card.focus,
+      energy: card.energy,
+      distractions: card.distractions,
+      whatWentWell: card.whatWentWell,
+      whatDidntGoWell: card.whatDidntGoWell,
+    }));
+
+    const distractionValues = reviewedSessionCards
+      .map((card) => card.distractions)
+      .filter((value): value is number => typeof value === "number");
+    const dailyVolumeMap = new Map<number, { reviewedCount: number; totalFocus: number; focusCount: number }>();
+    for (const card of reviewedSessionCards) {
+      const dayStart = startOfUTCDay(card.observedAt);
+      const existing = dailyVolumeMap.get(dayStart) ?? {
+        reviewedCount: 0,
+        totalFocus: 0,
+        focusCount: 0,
+      };
+      existing.reviewedCount += 1;
+      if (typeof card.focus === "number") {
+        existing.totalFocus += card.focus;
+        existing.focusCount += 1;
+      }
+      dailyVolumeMap.set(dayStart, existing);
+    }
+
+    const dailyVolume = [...dailyVolumeMap.entries()]
+      .sort((left, right) => left[0] - right[0])
+      .slice(-10)
+      .map(([dayStart, value]) => ({
+        id: String(dayStart),
+        dayStart,
+        reviewedCount: value.reviewedCount,
+        averageFocus:
+          value.focusCount > 0 ? roundMetric(value.totalFocus / value.focusCount) : null,
+      }));
+    const averageDurationMs = roundMetric(
+      averageOf(relevantReviewedSessions.map((session) => sessionDurationMs(session))),
+      0,
+    );
+    const qualityComponents = ["focus", "discipline", "adherence", "intentionality"]
+      .map((key) => signalAverages.find((signal) => signal.key == key)?.average)
+      .filter((value): value is number => typeof value === "number");
+
+    return {
+      generatedAt: timestamp,
+      windowDays,
+      reviewedSessions: relevantReviewedSessions.length,
+      completedSessions: relevantCompletedSessions.length,
+      pendingReviews: pendingReviewSessions.length,
+      reviewCompletionRate:
+        relevantCompletedSessions.length > 0
+          ? roundMetric((relevantReviewedSessions.length / relevantCompletedSessions.length) * 100)
+          : 0,
+      averageDurationMs,
+      averageDistractions: roundMetric(averageOf(distractionValues)),
+      qualityScore: roundMetric(averageOf(qualityComponents)),
+      dominantCategory,
+      streakDays: computeDayStreak(
+        relevantReviewedSessions.map((session) => observedDayKey(session.startTimeMs)),
+      ),
+      signalAverages,
+      categoryBreakdown,
+      trendSeries,
+      dailyVolume,
+      reflectionHighlights,
+      lastReviewedAt: relevantReviewedSessions[0]?.startTimeMs ?? null,
+      lastUpdatedAt: relevantReviewedSessions[0]?.updatedAt ?? null,
     };
   },
 });

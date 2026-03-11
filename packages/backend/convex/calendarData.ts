@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { internalMutation } from "./_generated/server";
 import type { Id } from "./_generated/dataModel";
+import { replaceMetricObservationsForEvent } from "./metricObservations";
 
 export const saveEvents = internalMutation({
   args: {
@@ -62,6 +63,26 @@ export const saveEvents = internalMutation({
           key,
           value,
         });
+      }
+
+      const observationEvent =
+        existing
+          ? {
+              ...existing,
+              title: evt.title,
+              description: evt.description,
+              isAllDay,
+              startTime: evt.startTime,
+              endTime: evt.endTime,
+            }
+          : await ctx.db.get(eventId);
+
+      if (observationEvent) {
+        await replaceMetricObservationsForEvent(
+          ctx,
+          observationEvent,
+          evt.metrics as Record<string, number | boolean | string>,
+        );
       }
     }
   },
