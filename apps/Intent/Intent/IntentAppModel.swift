@@ -18,6 +18,7 @@ final class IntentAppModel: ObservableObject {
     }
 
     @Published var deviceState: IntentDeviceState?
+    @Published var metricsState: IntentMetricsState?
     @Published var activeReview: IntentReviewContext?
     @Published var isBootstrapping = false
     @Published var isSubmittingReview = false
@@ -27,8 +28,10 @@ final class IntentAppModel: ObservableObject {
     @Published var lastError: String?
     @Published var lastNotice: String?
     @Published var lastSuccessfulPollAt: Date?
+    @Published var metricsWindowDays = 21
 
     private var pollingTask: Task<Void, Never>?
+    private var metricsTask: Task<Void, Never>?
     private var isPullInFlight = false
     private var startFocusInFlight = Set<String>()
     private var completeFocusInFlight = Set<String>()
@@ -40,6 +43,7 @@ final class IntentAppModel: ObservableObject {
     private var unavailableShortcuts = Set<String>()
 
     private let pollIntervalSeconds: TimeInterval = 2
+    private let metricsRefreshIntervalSeconds: TimeInterval = 60
     private let shortcutRefreshIntervalSeconds: TimeInterval = 60
 
     init() {
@@ -68,19 +72,30 @@ final class IntentAppModel: ObservableObject {
     }
 
     func start() {
-        guard pollingTask == nil, configuration.isPaired else {
+        guard configuration.isPaired else {
             return
         }
 
-        pollingTask = Task { [weak self] in
-            guard let self else { return }
-            await self.pollLoop()
+        if pollingTask == nil {
+            pollingTask = Task { [weak self] in
+                guard let self else { return }
+                await self.pollLoop()
+            }
+        }
+
+        if metricsTask == nil {
+            metricsTask = Task { [weak self] in
+                guard let self else { return }
+                await self.metricsLoop()
+            }
         }
     }
 
     func stop() {
         pollingTask?.cancel()
         pollingTask = nil
+        metricsTask?.cancel()
+        metricsTask = nil
     }
 
     func updateConfiguration(_ update: (inout IntentLocalConfiguration) -> Void) {
@@ -134,6 +149,7 @@ final class IntentAppModel: ObservableObject {
             connectionStatus = response.webhook.configured ? "Connected" : "Paired"
             start()
             await pollOnce()
+            await refreshMetricsOnce()
         } catch {
             lastNotice = nil
             lastError = displayMessage(for: error)
@@ -183,6 +199,7 @@ final class IntentAppModel: ObservableObject {
         do {
             _ = try await performPull(showNotice: true)
             await pollOnce()
+            await refreshMetricsOnce()
         } catch {
             lastNotice = nil
             lastError = displayMessage(for: error)
@@ -216,6 +233,7 @@ final class IntentAppModel: ObservableObject {
 
             self.activeReview = nil
             await pollOnce()
+            await refreshMetricsOnce()
         } catch {
             lastNotice = nil
             lastError = displayMessage(for: error)
@@ -241,6 +259,7 @@ final class IntentAppModel: ObservableObject {
     func resetPairing() {
         stop()
         deviceState = nil
+        metricsState = nil
         activeReview = nil
         startFocusInFlight.removeAll()
         completeFocusInFlight.removeAll()
@@ -259,6 +278,26 @@ final class IntentAppModel: ObservableObject {
         connectionStatus = "Needs setup"
         lastError = nil
         lastNotice = nil
+    }
+
+    func refreshMetricsNow() async {
+        do {
+            try await loadMetrics(showErrors: true)
+        } catch {
+            lastNotice = nil
+            lastError = displayMessage(for: error)
+        }
+    }
+
+    func setMetricsWindowDays(_ value: Int) {
+        guard metricsWindowDays != value else {
+            return
+        }
+
+        metricsWindowDays = value
+        Task {
+            await refreshMetricsNow()
+        }
     }
 
     func setOpenAIAPIKey(_ value: String) {
@@ -301,6 +340,27 @@ final class IntentAppModel: ObservableObject {
             do {
                 try await Task.sleep(
                     nanoseconds: UInt64(pollIntervalSeconds * 1_000_000_000)
+                )
+            } catch {
+                return
+            }
+        }
+    }
+
+    private func metricsLoop() async {
+        while !Task.isCancelled {
+            do {
+                try await loadMetrics(showErrors: metricsState == nil)
+            } catch {
+                if metricsState == nil {
+                    lastNotice = nil
+                    lastError = displayMessage(for: error)
+                }
+            }
+
+            do {
+                try await Task.sleep(
+                    nanoseconds: UInt64(metricsRefreshIntervalSeconds * 1_000_000_000)
                 )
             } catch {
                 return
@@ -606,6 +666,41 @@ final class IntentAppModel: ObservableObject {
         }
 
         return response
+    }
+
+    private func refreshMetricsOnce() async {
+        do {
+            try await loadMetrics(showErrors: false)
+        } catch {
+            if metricsState == nil {
+                lastNotice = nil
+                lastError = displayMessage(for: error)
+            }
+        }
+    }
+
+    private func loadMetrics(showErrors: Bool) async throws {
+        guard configuration.isPaired else {
+            metricsState = nil
+            return
+        }
+
+        do {
+            let response: IntentDeviceMetricsEnvelope = try await post(
+                path: "/intent/device/metrics",
+                body: IntentDeviceMetricsRequest(
+                    deviceId: configuration.deviceId,
+                    deviceSecret: configuration.deviceSecret,
+                    windowDays: metricsWindowDays
+                )
+            )
+
+            metricsState = response.state
+        } catch {
+            if showErrors {
+                throw error
+            }
+        }
     }
 
     private func validate(response: URLResponse, data: Data) throws {

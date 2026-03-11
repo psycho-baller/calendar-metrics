@@ -68,6 +68,12 @@ struct IntentDevicePollRequest: Encodable {
     let settings: IntentDeviceSettingsPayload
 }
 
+struct IntentDeviceMetricsRequest: Encodable {
+    let deviceId: String
+    let deviceSecret: String
+    let windowDays: Int
+}
+
 struct IntentSessionActionRequest: Encodable {
     let deviceId: String
     let deviceSecret: String
@@ -113,6 +119,11 @@ struct IntentDevicePollEnvelope: Decodable {
     let state: IntentDeviceState
 }
 
+struct IntentDeviceMetricsEnvelope: Decodable {
+    let ok: Bool
+    let state: IntentMetricsState
+}
+
 struct IntentPullResponse: Decodable {
     let ok: Bool
     let pulled: Bool
@@ -128,6 +139,74 @@ struct IntentDeviceState: Decodable {
     let pendingReview: IntentPendingReview?
     let pendingReviewsCount: Int
     let recentSessions: [IntentDashboardSession]
+}
+
+struct IntentMetricsState: Decodable {
+    let generatedAt: Int
+    let windowDays: Int
+    let reviewedSessions: Int
+    let completedSessions: Int
+    let pendingReviews: Int
+    let reviewCompletionRate: Double
+    let averageDurationMs: Double
+    let averageDistractions: Double
+    let qualityScore: Double
+    let dominantCategory: String?
+    let streakDays: Int
+    let signalAverages: [IntentSignalAverage]
+    let categoryBreakdown: [IntentCategoryBreakdown]
+    let trendSeries: [IntentMetricTrendPoint]
+    let dailyVolume: [IntentDailyVolumePoint]
+    let reflectionHighlights: [IntentReflectionHighlight]
+    let lastReviewedAt: Int?
+    let lastUpdatedAt: Int?
+}
+
+struct IntentSignalAverage: Decodable, Identifiable, Equatable {
+    let id: String
+    let key: String
+    let title: String
+    let average: Double
+    let count: Int
+    let deltaFromPrevious: Double?
+}
+
+struct IntentCategoryBreakdown: Decodable, Identifiable, Equatable {
+    let id: String
+    let key: String
+    let label: String
+    let count: Int
+    let share: Double
+}
+
+struct IntentMetricTrendPoint: Decodable, Identifiable, Equatable {
+    let id: String
+    let sessionId: String
+    let title: String
+    let observedAt: Int
+    let durationMs: Int
+    let taskCategory: String
+    let metrics: [String: Double]
+}
+
+struct IntentDailyVolumePoint: Decodable, Identifiable, Equatable {
+    let id: String
+    let dayStart: Int
+    let reviewedCount: Int
+    let averageFocus: Double?
+}
+
+struct IntentReflectionHighlight: Decodable, Identifiable, Equatable {
+    let id: String
+    let sessionId: String
+    let title: String
+    let observedAt: Int
+    let taskCategory: String
+    let focus: Int?
+    let energy: Int?
+    let distractions: Int?
+    let whatWentWell: String
+    let whatDidntGoWell: String
 }
 
 struct IntentDeviceInfo: Decodable {
@@ -253,8 +332,8 @@ struct IntentDashboardSession: Decodable, Identifiable, Equatable {
 }
 
 struct IntentReviewDraft: Equatable {
-    var numericMetrics = IntentReviewCatalog.defaultNumericMetrics
-    var countMetrics = IntentReviewCatalog.defaultCountMetrics
+    var numericMetrics = [String: Int]()
+    var countMetrics = [String: Int]()
     var booleanMetrics = [String: Bool]()
     var taskCategory = IntentReviewCatalog.defaultTaskCategory
     var whatWentWell = ""

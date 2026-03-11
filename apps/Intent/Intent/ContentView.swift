@@ -10,6 +10,7 @@ import SwiftUI
 
 private enum IntentScreen: String, CaseIterable, Identifiable {
     case dashboard
+    case metrics
     case settings
 
     var id: String { rawValue }
@@ -18,6 +19,8 @@ private enum IntentScreen: String, CaseIterable, Identifiable {
         switch self {
         case .dashboard:
             return "Dashboard"
+        case .metrics:
+            return "Visuals"
         case .settings:
             return "Settings"
         }
@@ -27,6 +30,8 @@ private enum IntentScreen: String, CaseIterable, Identifiable {
         switch self {
         case .dashboard:
             return "Live work ledger"
+        case .metrics:
+            return "Patterns and trends"
         case .settings:
             return "Automation and wiring"
         }
@@ -36,6 +41,8 @@ private enum IntentScreen: String, CaseIterable, Identifiable {
         switch self {
         case .dashboard:
             return "square.grid.2x2.fill"
+        case .metrics:
+            return "chart.xyaxis.line"
         case .settings:
             return "slider.horizontal.3"
         }
@@ -75,6 +82,8 @@ struct ContentView: View {
                 switch selection {
                 case .dashboard:
                     dashboardView
+                case .metrics:
+                    IntentMetricsView(model: model)
                 case .settings:
                     settingsView
                 }
