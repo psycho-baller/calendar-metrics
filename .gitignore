@@ -6,6 +6,7 @@ node_modules
 # Build outputs
 dist
 build
+.build/
 *.tsbuildinfo
 
 # Environment variables
@@ -48,3 +49,7 @@ coverage
 .cache
 tmp
 temp
+
+# Xcode
+*.xcuserstate
+xcuserdata/
