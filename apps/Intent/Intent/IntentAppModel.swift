@@ -42,8 +42,11 @@ final class IntentAppModel: ObservableObject {
     private var lastShortcutRefreshAt: Date?
     private var unavailableShortcuts = Set<String>()
 
-    private let pollIntervalSeconds: TimeInterval = 2
-    private let metricsRefreshIntervalSeconds: TimeInterval = 60
+    private let pendingWorkPollIntervalSeconds: TimeInterval = 3
+    private let activeSessionPollIntervalSeconds: TimeInterval = 12
+    private let idlePollIntervalSeconds: TimeInterval = 45
+    private let reconnectPollIntervalSeconds: TimeInterval = 60
+    private let metricsRefreshIntervalSeconds: TimeInterval = 300
     private let shortcutRefreshIntervalSeconds: TimeInterval = 60
 
     init() {
@@ -336,10 +339,11 @@ final class IntentAppModel: ObservableObject {
     private func pollLoop() async {
         while !Task.isCancelled {
             await pollOnce()
+            let intervalSeconds = nextPollIntervalSeconds()
 
             do {
                 try await Task.sleep(
-                    nanoseconds: UInt64(pollIntervalSeconds * 1_000_000_000)
+                    nanoseconds: UInt64(intervalSeconds * 1_000_000_000)
                 )
             } catch {
                 return
@@ -366,6 +370,32 @@ final class IntentAppModel: ObservableObject {
                 return
             }
         }
+    }
+
+    private func nextPollIntervalSeconds() -> TimeInterval {
+        guard configuration.isPaired else {
+            return reconnectPollIntervalSeconds
+        }
+
+        guard connectionStatus == "Connected", let state = deviceState else {
+            return reconnectPollIntervalSeconds
+        }
+
+        if state.pendingFocusStart != nil ||
+            state.pendingFocusComplete != nil ||
+            state.pendingReview != nil ||
+            activeReview != nil ||
+            !startFocusInFlight.isEmpty ||
+            !completeFocusInFlight.isEmpty ||
+            !presentedReviewInFlight.isEmpty {
+            return pendingWorkPollIntervalSeconds
+        }
+
+        if state.activeSession != nil {
+            return activeSessionPollIntervalSeconds
+        }
+
+        return idlePollIntervalSeconds
     }
 
     private func handle(_ state: IntentDeviceState) async {

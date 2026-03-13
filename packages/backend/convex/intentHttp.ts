@@ -611,19 +611,18 @@ export const bootstrap = httpAction(async (ctx, request) => {
 export const pollDevice = httpAction(async (ctx, request) => {
   try {
     const { body } = await readJson<DeviceAuthBody>(request);
-    const device = await authenticateDevice(ctx, body ?? {});
-    if (!device || !body?.deviceId) {
+    if (!body?.deviceId || !body?.deviceSecret) {
       return json(401, { error: "Invalid device credentials." });
     }
 
-    await ctx.runMutation(internal.intent.heartbeatDevice, {
+    const state = await ctx.runMutation(internal.intent.pollDeviceState, {
       deviceId: body.deviceId,
+      deviceSecret: body.deviceSecret,
       settings: body.settings ?? {},
     });
-
-    const state = await ctx.runQuery(internal.intent.getDevicePollState, {
-      deviceId: body.deviceId,
-    });
+    if (!state) {
+      return json(401, { error: "Invalid device credentials." });
+    }
 
     return json(200, {
       ok: true,

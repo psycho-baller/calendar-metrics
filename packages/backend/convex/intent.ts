@@ -14,6 +14,7 @@ const DEFAULT_INTEGRATION_SLUG = "default";
 const DEFAULT_METRICS_WINDOW_DAYS = 21;
 const MIN_METRICS_WINDOW_DAYS = 7;
 const MAX_METRICS_WINDOW_DAYS = 90;
+const DEVICE_HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
 const INTENT_COUNT_METRIC_KEYS = new Set(["distractions"]);
 const INTENT_SIGNAL_ORDER = [
   "focus",
@@ -321,6 +322,171 @@ function mergeDeviceSettings(
   };
 }
 
+function buildDeviceHeartbeatPatch(
+  device: Doc<"intentDevices">,
+  merged: ReturnType<typeof mergeDeviceSettings>,
+  timestamp: number,
+) {
+  const patch: Partial<Doc<"intentDevices">> = {};
+
+  if (device.bundleId !== merged.bundleId) {
+    patch.bundleId = merged.bundleId;
+  }
+  if (device.autoStartFocus !== merged.autoStartFocus) {
+    patch.autoStartFocus = merged.autoStartFocus;
+  }
+  if (device.autoCompleteFocus !== merged.autoCompleteFocus) {
+    patch.autoCompleteFocus = merged.autoCompleteFocus;
+  }
+  if (device.autoShowReview !== merged.autoShowReview) {
+    patch.autoShowReview = merged.autoShowReview;
+  }
+  if (device.startShortcutName !== merged.startShortcutName) {
+    patch.startShortcutName = merged.startShortcutName;
+  }
+  if (device.completeShortcutName !== merged.completeShortcutName) {
+    patch.completeShortcutName = merged.completeShortcutName;
+  }
+
+  const shouldRefreshHeartbeat =
+    typeof device.lastSeenAt !== "number" ||
+    timestamp - device.lastSeenAt >= DEVICE_HEARTBEAT_INTERVAL_MS;
+
+  if (shouldRefreshHeartbeat) {
+    patch.lastSeenAt = timestamp;
+  }
+
+  if (Object.keys(patch).length > 0) {
+    patch.updatedAt = timestamp;
+  }
+
+  return patch;
+}
+
+async function buildDevicePollState(
+  ctx: any,
+  device: Doc<"intentDevices">,
+  integration?: Doc<"intentIntegrationState">,
+) {
+  const currentIntegration = integration ?? (await getIntegrationDoc(ctx));
+
+  const runningSessions = await ctx.db
+    .query("intentSessions")
+    .withIndex("by_status_startTimeMs", (q: any) => q.eq("status", "running"))
+    .order("desc")
+    .collect();
+
+  const activeSession = runningSessions[0] ?? null;
+  const pendingFocusStart =
+    device.autoStartFocus && activeSession?.focusStatus === "pending"
+      ? activeSession
+      : null;
+
+  const pendingFocusCompleteSessions = await ctx.db
+    .query("intentSessions")
+    .withIndex("by_status_startTimeMs", (q: any) => q.eq("status", "completed"))
+    .order("asc")
+    .collect();
+
+  const pendingFocusComplete =
+    device.autoCompleteFocus
+      ? pendingFocusCompleteSessions.find(
+          (session: Doc<"intentSessions">) => session.focusStatus === "started",
+        ) ?? null
+      : null;
+
+  const pendingReviewSessions = (
+    await Promise.all(
+      ["pending", "presented"].map((status) =>
+        ctx.db
+          .query("intentSessions")
+          .withIndex("by_reviewStatus_updatedAt", (q: any) =>
+            q.eq("reviewStatus", status),
+          )
+          .order("asc")
+          .collect(),
+      ),
+    )
+  ).flat();
+
+  const pendingReview =
+    device.autoShowReview
+      ? pendingReviewSessions.find((session: Doc<"intentSessions">) =>
+          isPendingReviewStatus(session.reviewStatus),
+        ) ?? null
+      : null;
+
+  const activeReviewDoc = pendingReview
+    ? await ctx.db
+        .query("intentSessionReviews")
+        .withIndex("by_sessionId", (q: any) => q.eq("sessionId", pendingReview._id))
+        .first()
+    : null;
+
+  const completedSessionsDesc = await ctx.db
+    .query("intentSessions")
+    .withIndex("by_status_startTimeMs", (q: any) => q.eq("status", "completed"))
+    .order("desc")
+    .collect();
+
+  const recentSessions = [...runningSessions, ...completedSessionsDesc]
+    .sort((left, right) => right.startTimeMs - left.startTimeMs)
+    .slice(0, 16);
+
+  const recentSessionReviews = await Promise.all(
+    recentSessions.map((session) =>
+      ctx.db
+        .query("intentSessionReviews")
+        .withIndex("by_sessionId", (q: any) => q.eq("sessionId", session._id))
+        .first(),
+    ),
+  );
+
+  return {
+    device: {
+      id: device.deviceId,
+      name: device.name,
+      platform: device.platform,
+      isDefault: device.isDefault,
+      autoStartFocus: device.autoStartFocus,
+      autoCompleteFocus: device.autoCompleteFocus,
+      autoShowReview: device.autoShowReview,
+      startShortcutName: device.startShortcutName ?? null,
+      completeShortcutName: device.completeShortcutName ?? null,
+      lastSeenAt: device.lastSeenAt ?? null,
+    },
+    integration: {
+      defaultDeviceId: currentIntegration.defaultDeviceId ?? null,
+      togglWorkspaceId: currentIntegration.togglWorkspaceId ?? null,
+      togglWebhookSubscriptionId:
+        currentIntegration.togglWebhookSubscriptionId ?? null,
+      togglWebhookUrl: currentIntegration.togglWebhookUrl ?? null,
+      togglWebhookValidatedAt:
+        currentIntegration.togglWebhookValidatedAt ?? null,
+      lastWebhookAt: currentIntegration.lastWebhookAt ?? null,
+      lastWebhookAction: currentIntegration.lastWebhookAction ?? null,
+      lastWebhookTimeEntryId: currentIntegration.lastWebhookTimeEntryId ?? null,
+      lastWebhookError: currentIntegration.lastWebhookError ?? null,
+    },
+    activeSession: activeSession ? toSessionSummary(activeSession) : null,
+    pendingFocusStart: pendingFocusStart ? toSessionSummary(pendingFocusStart) : null,
+    pendingFocusComplete: pendingFocusComplete
+      ? toSessionSummary(pendingFocusComplete)
+      : null,
+    pendingReview: pendingReview
+      ? {
+          ...toSessionSummary(pendingReview),
+          existingReview: toReviewSummary(activeReviewDoc),
+        }
+      : null,
+    pendingReviewsCount: pendingReviewSessions.length,
+    recentSessions: recentSessions.map((session, index) => ({
+      ...toSessionSummary(session),
+      existingReview: toReviewSummary(recentSessionReviews[index] ?? null),
+    })),
+  };
+}
+
 export const registerDevice = internalMutation({
   args: {
     deviceName: v.string(),
@@ -413,6 +579,38 @@ export const heartbeatDevice = internalMutation({
       lastSeenAt: timestamp,
       updatedAt: timestamp,
     };
+  },
+});
+
+export const pollDeviceState = internalMutation({
+  args: {
+    deviceId: v.string(),
+    deviceSecret: v.string(),
+    settings: v.optional(v.any()),
+  },
+  handler: async (ctx, args) => {
+    const device = await getDeviceDoc(ctx, args.deviceId);
+    if (!device || device.deviceSecret !== args.deviceSecret) {
+      return null;
+    }
+
+    const timestamp = now();
+    const merged = mergeDeviceSettings(device, args.settings as DeviceSettings);
+    const patch = buildDeviceHeartbeatPatch(device, merged, timestamp);
+    const currentDevice =
+      Object.keys(patch).length > 0
+        ? {
+            ...device,
+            ...patch,
+          }
+        : device;
+
+    if (Object.keys(patch).length > 0) {
+      await ctx.db.patch(device._id, patch);
+    }
+
+    const integration = await getIntegrationDoc(ctx);
+    return await buildDevicePollState(ctx, currentDevice, integration);
   },
 });
 
@@ -815,127 +1013,11 @@ export const getDevicePollState = internalQuery({
     deviceId: v.string(),
   },
   handler: async (ctx, args) => {
-    const integration = await getIntegrationDoc(ctx);
     const device = await getDeviceDoc(ctx, args.deviceId);
     if (!device) {
       return null;
     }
-
-    const runningSessions = await ctx.db
-      .query("intentSessions")
-      .withIndex("by_status_startTimeMs", (q: any) => q.eq("status", "running"))
-      .order("desc")
-      .collect();
-
-    const activeSession = runningSessions[0] ?? null;
-    const pendingFocusStart =
-      device.autoStartFocus && activeSession?.focusStatus === "pending"
-        ? activeSession
-        : null;
-
-    const pendingFocusCompleteSessions = await ctx.db
-      .query("intentSessions")
-      .withIndex("by_status_startTimeMs", (q: any) => q.eq("status", "completed"))
-      .order("asc")
-      .collect();
-
-    const pendingFocusComplete =
-      device.autoCompleteFocus
-        ? pendingFocusCompleteSessions.find(
-            (session) => session.focusStatus === "started",
-          ) ?? null
-        : null;
-
-    const pendingReviewSessions = (
-      await Promise.all(
-        ["pending", "presented"].map((status) =>
-          ctx.db
-            .query("intentSessions")
-            .withIndex("by_reviewStatus_updatedAt", (q: any) =>
-              q.eq("reviewStatus", status),
-            )
-            .order("asc")
-            .collect(),
-        ),
-      )
-    ).flat();
-
-    const pendingReview =
-      device.autoShowReview
-        ? pendingReviewSessions.find((session) =>
-            isPendingReviewStatus(session.reviewStatus),
-          ) ?? null
-        : null;
-
-    const activeReviewDoc = pendingReview
-      ? await ctx.db
-          .query("intentSessionReviews")
-          .withIndex("by_sessionId", (q: any) => q.eq("sessionId", pendingReview._id))
-          .first()
-      : null;
-
-    const completedSessionsDesc = await ctx.db
-      .query("intentSessions")
-      .withIndex("by_status_startTimeMs", (q: any) => q.eq("status", "completed"))
-      .order("desc")
-      .collect();
-
-    const recentSessions = [...runningSessions, ...completedSessionsDesc]
-      .sort((left, right) => right.startTimeMs - left.startTimeMs)
-      .slice(0, 16);
-
-    const recentSessionReviews = await Promise.all(
-      recentSessions.map((session) =>
-        ctx.db
-          .query("intentSessionReviews")
-          .withIndex("by_sessionId", (q: any) => q.eq("sessionId", session._id))
-          .first(),
-      ),
-    );
-
-    return {
-      device: {
-        id: device.deviceId,
-        name: device.name,
-        platform: device.platform,
-        isDefault: device.isDefault,
-        autoStartFocus: device.autoStartFocus,
-        autoCompleteFocus: device.autoCompleteFocus,
-        autoShowReview: device.autoShowReview,
-        startShortcutName: device.startShortcutName ?? null,
-        completeShortcutName: device.completeShortcutName ?? null,
-        lastSeenAt: device.lastSeenAt ?? null,
-      },
-      integration: {
-        defaultDeviceId: integration.defaultDeviceId ?? null,
-        togglWorkspaceId: integration.togglWorkspaceId ?? null,
-        togglWebhookSubscriptionId: integration.togglWebhookSubscriptionId ?? null,
-        togglWebhookUrl: integration.togglWebhookUrl ?? null,
-        togglWebhookValidatedAt: integration.togglWebhookValidatedAt ?? null,
-        lastWebhookAt: integration.lastWebhookAt ?? null,
-        lastWebhookAction: integration.lastWebhookAction ?? null,
-        lastWebhookTimeEntryId: integration.lastWebhookTimeEntryId ?? null,
-        lastWebhookError: integration.lastWebhookError ?? null,
-      },
-      activeSession: activeSession ? toSessionSummary(activeSession) : null,
-      pendingFocusStart: pendingFocusStart
-        ? toSessionSummary(pendingFocusStart)
-        : null,
-      pendingFocusComplete: pendingFocusComplete
-        ? toSessionSummary(pendingFocusComplete)
-        : null,
-      pendingReview: pendingReview
-        ? {
-            ...toSessionSummary(pendingReview),
-            existingReview: toReviewSummary(activeReviewDoc),
-          }
-        : null,
-      pendingReviewsCount: pendingReviewSessions.length,
-      recentSessions: recentSessions.map((session, index) => ({
-        ...toSessionSummary(session),
-        existingReview: toReviewSummary(recentSessionReviews[index] ?? null),
-      })),
-    };
+    return await buildDevicePollState(ctx, device);
   },
 });
 

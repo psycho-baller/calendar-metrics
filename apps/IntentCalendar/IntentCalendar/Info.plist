@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<true/>
+	</dict>
+	<key>UILaunchScreen</key>
+	<dict/>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>IntentCalendar uses the microphone so you can dictate your day plan and quick schedule updates.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>IntentCalendar needs calendar access to read your day structure and write approved planned blocks into your planning calendar.</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>IntentCalendar needs calendar access to read your day structure and write approved planned blocks into your planning calendar.</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>intentcalendar</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>
