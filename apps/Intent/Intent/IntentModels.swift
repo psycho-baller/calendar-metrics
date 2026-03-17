@@ -16,6 +16,9 @@ struct IntentLocalConfiguration: Codable, Equatable {
     var autoStartFocus = true
     var autoCompleteFocus = true
     var autoShowReview = true
+    var dailyReportEnabled = false
+    var dailyReportTimeMinutes = 21 * 60
+    var notifyWhenDailyReportReady = true
     var startShortcutName = "Start Focus Session"
     var completeShortcutName = "Complete Focus Session"
     var bundleID = Bundle.main.bundleIdentifier ?? "studio.orbitlabs.Intent"
@@ -74,6 +77,13 @@ struct IntentDeviceMetricsRequest: Encodable {
     let windowDays: Int
 }
 
+struct IntentDeviceDailyReportRequest: Encodable {
+    let deviceId: String
+    let deviceSecret: String
+    let startTimeMs: Int
+    let endTimeMs: Int
+}
+
 struct IntentSessionActionRequest: Encodable {
     let deviceId: String
     let deviceSecret: String
@@ -88,6 +98,7 @@ struct IntentSubmitReviewRequest: Encodable {
     let countMetrics: [String: Int]
     let booleanMetrics: [String: Bool]
     let taskCategory: String
+    let projectName: String?
     let whatWentWell: String?
     let whatDidntGoWell: String?
 }
@@ -122,6 +133,11 @@ struct IntentDevicePollEnvelope: Decodable {
 struct IntentDeviceMetricsEnvelope: Decodable {
     let ok: Bool
     let state: IntentMetricsState
+}
+
+struct IntentDailyReportContextEnvelope: Decodable {
+    let ok: Bool
+    let state: IntentDailyReportContext
 }
 
 struct IntentPullResponse: Decodable {
@@ -160,6 +176,29 @@ struct IntentMetricsState: Decodable {
     let reflectionHighlights: [IntentReflectionHighlight]
     let lastReviewedAt: Int?
     let lastUpdatedAt: Int?
+}
+
+struct IntentDailyReportCategory: Codable, Equatable, Identifiable {
+    let id: String
+    let label: String
+    let count: Int
+}
+
+struct IntentDailyReportContext: Codable, Equatable {
+    let generatedAt: Int
+    let startTimeMs: Int
+    let endTimeMs: Int
+    let trackedDurationMs: Int
+    let totalSessions: Int
+    let completedSessions: Int
+    let reviewedSessions: Int
+    let pendingReviews: Int
+    let averageFocus: Double?
+    let averageAdherence: Double?
+    let averageEnergy: Double?
+    let totalDistractions: Int
+    let topCategories: [IntentDailyReportCategory]
+    let sessions: [IntentDailyReportSession]
 }
 
 struct IntentSignalAverage: Decodable, Identifiable, Equatable {
@@ -241,6 +280,7 @@ struct IntentSessionSummary: Decodable, Identifiable, Equatable {
     let workspaceId: Int
     let togglUserId: Int?
     let togglProjectId: Int?
+    let projectName: String?
     let togglTaskId: Int?
     let description: String
     let tags: [String]
@@ -260,7 +300,7 @@ struct IntentSessionSummary: Decodable, Identifiable, Equatable {
     }
 }
 
-struct IntentExistingReview: Decodable, Equatable {
+struct IntentExistingReview: Codable, Equatable {
     let numericMetrics: [String: Int]
     let countMetrics: [String: Int]
     let booleanMetrics: [String: Bool]
@@ -284,6 +324,7 @@ struct IntentPendingReview: Decodable, Identifiable, Equatable {
     let workspaceId: Int
     let togglUserId: Int?
     let togglProjectId: Int?
+    let projectName: String?
     let togglTaskId: Int?
     let description: String
     let tags: [String]
@@ -311,6 +352,7 @@ struct IntentDashboardSession: Decodable, Identifiable, Equatable {
     let workspaceId: Int
     let togglUserId: Int?
     let togglProjectId: Int?
+    let projectName: String?
     let togglTaskId: Int?
     let description: String
     let tags: [String]
@@ -331,17 +373,87 @@ struct IntentDashboardSession: Decodable, Identifiable, Equatable {
     }
 }
 
+struct IntentDailyReportSession: Codable, Identifiable, Equatable {
+    let id: String
+    let source: String
+    let sourceTimeEntryId: String
+    let workspaceId: Int
+    let togglUserId: Int?
+    let togglProjectId: Int?
+    let projectName: String?
+    let togglTaskId: Int?
+    let description: String
+    let tags: [String]
+    let billable: Bool?
+    let startTimeMs: Int
+    let stopTimeMs: Int?
+    let durationMs: Int?
+    let durationWithinWindowMs: Int
+    let status: String
+    let focusStatus: String
+    let reviewStatus: String
+    let sourceUpdatedAt: Int
+    let createdAt: Int
+    let updatedAt: Int
+    let existingReview: IntentExistingReview?
+
+    var displayTitle: String {
+        description.isEmpty ? "Untitled session" : description
+    }
+}
+
+struct IntentGeneratedDailyReport: Codable, Equatable, Identifiable {
+    enum Source: String, Codable {
+        case ai
+        case fallback
+    }
+
+    let id: String
+    let dayKey: String
+    let title: String
+    let headline: String
+    let overview: String
+    let stats: [String]
+    let whatWentWell: [String]
+    let whatDidntGoWell: [String]
+    let improvements: [String]
+    let intervalStartMs: Int
+    let intervalEndMs: Int
+    let generatedAtMs: Int
+    let source: Source
+
+    var generatedAtDate: Date {
+        Date(timeIntervalSince1970: TimeInterval(generatedAtMs) / 1000)
+    }
+
+    var intervalStartDate: Date {
+        Date(timeIntervalSince1970: TimeInterval(intervalStartMs) / 1000)
+    }
+
+    var intervalEndDate: Date {
+        Date(timeIntervalSince1970: TimeInterval(intervalEndMs) / 1000)
+    }
+}
+
 struct IntentReviewDraft: Equatable {
     var numericMetrics = [String: Int]()
     var countMetrics = [String: Int]()
     var booleanMetrics = [String: Bool]()
     var taskCategory = IntentReviewCatalog.defaultTaskCategory
+    var projectName = ""
     var whatWentWell = ""
     var whatDidntGoWell = ""
 
-    init(existingReview: IntentExistingReview?) {
+    init(existingReview: IntentExistingReview?, sessionProjectName: String? = nil) {
         guard let existingReview else {
+            if let name = sessionProjectName, !name.isEmpty {
+                self.projectName = name
+            }
             return
+        }
+
+        if let name = sessionProjectName, !name.isEmpty {
+            self.projectName = name
         }
 
         taskCategory = existingReview.taskCategory
@@ -350,6 +462,12 @@ struct IntentReviewDraft: Equatable {
         booleanMetrics = existingReview.booleanMetrics
         whatWentWell = existingReview.whatWentWell
         whatDidntGoWell = existingReview.whatDidntGoWell
+    }
+
+    mutating func setSessionProjectNameIfNeeded(_ name: String?) {
+        if let name = name, projectName.isEmpty {
+            projectName = name
+        }
     }
 
     func numericMetricValue(for key: String) -> Int {

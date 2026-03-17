@@ -21,12 +21,18 @@ type DeviceMetricsBody = DeviceAuthBody & {
   windowDays?: number;
 };
 
+type DeviceDailyReportBody = DeviceAuthBody & {
+  startTimeMs?: number;
+  endTimeMs?: number;
+};
+
 type ReviewBody = DeviceAuthBody & {
   sessionId?: string;
   numericMetrics?: Record<string, number>;
   countMetrics?: Record<string, number>;
   booleanMetrics?: Record<string, boolean>;
   taskCategory?: string;
+  projectName?: string;
   whatWentWell?: string;
   whatDidntGoWell?: string;
 };
@@ -253,6 +259,19 @@ async function togglApiRequest<T>(
   }
 
   return (await response.json()) as T;
+}
+
+async function fetchTogglProjectName(workspaceId: number, projectId: number) {
+  try {
+    const project = await togglApiRequest<{ name: string }>(
+      `/workspaces/${workspaceId}/projects/${projectId}`,
+      { method: "GET" }
+    );
+    return project.name;
+  } catch (error) {
+    console.error(`Failed to fetch Toggl project ${projectId}:`, error);
+    return undefined;
+  }
 }
 
 async function ensureTogglWebhook(ctx: any) {
@@ -659,6 +678,37 @@ export const deviceMetrics = httpAction(async (ctx, request) => {
   }
 });
 
+export const deviceDailyReport = httpAction(async (ctx, request) => {
+  try {
+    const { body } = await readJson<DeviceDailyReportBody>(request);
+    const device = await authenticateDevice(ctx, body ?? {});
+    if (
+      !device ||
+      typeof body?.startTimeMs !== "number" ||
+      typeof body?.endTimeMs !== "number"
+    ) {
+      return json(401, { error: "Invalid request." });
+    }
+
+    const state = await ctx.runQuery(internal.intent.getDeviceDailyReportContext, {
+      startTimeMs: body.startTimeMs,
+      endTimeMs: body.endTimeMs,
+    });
+
+    return json(200, {
+      ok: true,
+      state,
+    });
+  } catch (error) {
+    return json(500, {
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to load the daily report context.",
+    });
+  }
+});
+
 export const pullDevice = httpAction(async (ctx, request) => {
   try {
     const { body } = await readJson<DeviceAuthBody>(request);
@@ -684,9 +734,14 @@ export const pullDevice = httpAction(async (ctx, request) => {
 
     const currentTimeEntry = await fetchCurrentTogglTimeEntry();
     if (currentTimeEntry && currentTimeEntry.workspace_id === workspaceId) {
+      const projectName = currentTimeEntry.project_id
+        ? await fetchTogglProjectName(currentTimeEntry.workspace_id, currentTimeEntry.project_id)
+        : undefined;
+
       const result = await ctx.runMutation(internal.intent.upsertSessionFromToggl, {
         action: "updated",
         timeEntry: currentTimeEntry,
+        projectName,
       });
       pulled = true;
       reason = "Pulled the current Toggl time entry.";
@@ -707,9 +762,14 @@ export const pullDevice = httpAction(async (ctx, request) => {
       activeSourceTimeEntryId !== String(currentTimeEntry?.id ?? "")
     ) {
       const syncedTimeEntry = await fetchTogglTimeEntry(activeWorkspaceId, activeTimeEntryId);
+      const projectName = syncedTimeEntry.project_id
+        ? await fetchTogglProjectName(syncedTimeEntry.workspace_id, syncedTimeEntry.project_id)
+        : undefined;
+
       const result = await ctx.runMutation(internal.intent.upsertSessionFromToggl, {
         action: "updated",
         timeEntry: syncedTimeEntry,
+        projectName,
       });
 
       if (syncedTimeEntry.stop) {
@@ -842,6 +902,7 @@ export const submitReview = httpAction(async (ctx, request) => {
         countMetrics: body.countMetrics ?? {},
         booleanMetrics: body.booleanMetrics ?? {},
         taskCategory: normalizedCategory,
+        projectName: body.projectName?.trim() || undefined,
         whatWentWell: body.whatWentWell?.trim() || undefined,
         whatDidntGoWell: body.whatDidntGoWell?.trim() || undefined,
       },
@@ -973,9 +1034,14 @@ export const togglWebhook = httpAction(async (ctx, request) => {
       eventDetails.workspaceId,
       eventDetails.entityId,
     );
+    const projectName = timeEntry.project_id
+      ? await fetchTogglProjectName(timeEntry.workspace_id, timeEntry.project_id)
+      : undefined;
+
     const result = await ctx.runMutation(internal.intent.upsertSessionFromToggl, {
       action: eventDetails.action,
       timeEntry,
+      projectName,
     });
 
     return json(200, {

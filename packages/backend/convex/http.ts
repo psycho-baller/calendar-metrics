@@ -6,6 +6,7 @@ import {
   acknowledgeFocusStart,
   acknowledgeReviewPresented,
   bootstrap,
+  deviceDailyReport,
   deviceMetrics,
   health,
   pullDevice,
@@ -34,6 +35,12 @@ http.route({
   path: "/intent/device/metrics",
   method: "POST",
   handler: deviceMetrics,
+});
+
+http.route({
+  path: "/intent/device/daily-report",
+  method: "POST",
+  handler: deviceDailyReport,
 });
 
 http.route({

@@ -99,6 +99,7 @@ export default defineSchema({
     workspaceId: v.number(),
     togglUserId: v.optional(v.number()),
     togglProjectId: v.optional(v.number()),
+    projectName: v.optional(v.string()),
     togglTaskId: v.optional(v.number()),
     description: v.optional(v.string()),
     tagJson: v.optional(v.string()),

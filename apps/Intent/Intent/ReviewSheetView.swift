@@ -13,6 +13,7 @@ struct ReviewSheetView: View {
     let isSubmitting: Bool
     let aiConfigured: Bool
     let taskCategorySuggestions: [String]
+    let projectNameSuggestions: [String]
     let onExtractCapture: (String) async throws -> IntentReviewAIPatch
     let onSubmit: () -> Void
     let onDismiss: () -> Void
@@ -28,6 +29,7 @@ struct ReviewSheetView: View {
             VStack(alignment: .leading, spacing: 22) {
                 headerSection
                 quickCaptureSection
+                projectSection
                 categorySection
                 numericSignalsSection
                 countSignalsSection
@@ -195,6 +197,17 @@ struct ReviewSheetView: View {
         }
     }
 
+    private var projectSection: some View {
+        ReviewSectionCard(title: "Project", subtitle: "Optional. Automatically synced from Toggl, but can be overridden here.") {
+            TextField("Project name", text: draftBinding(\.projectName))
+                .textFieldStyle(.roundedBorder)
+                .textInputSuggestions(filteredProjectNameSuggestions, id: \.self) { suggestion in
+                    Label(suggestion, systemImage: "arrow.turn.down.right")
+                        .textInputCompletion(suggestion)
+                }
+        }
+    }
+
     private var categorySection: some View {
         ReviewSectionCard(title: "Task Category", subtitle: "Open-ended, with suggestions from prior completions.") {
             TextField("Task category", text: draftBinding(\.taskCategory))
@@ -293,6 +306,26 @@ struct ReviewSheetView: View {
         let lowered = trimmed.lowercased()
 
         return taskCategorySuggestions
+            .filter { suggestion in
+                guard suggestion.lowercased() != lowered else {
+                    return false
+                }
+
+                if lowered.isEmpty {
+                    return true
+                }
+
+                return suggestion.lowercased().contains(lowered)
+            }
+            .prefix(8)
+            .map { $0 }
+    }
+
+    private var filteredProjectNameSuggestions: [String] {
+        let trimmed = context.draft.projectName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let lowered = trimmed.lowercased()
+
+        return projectNameSuggestions
             .filter { suggestion in
                 guard suggestion.lowercased() != lowered else {
                     return false

@@ -8,6 +8,7 @@
 import AppKit
 import Combine
 import Foundation
+import UserNotifications
 
 @MainActor
 final class IntentAppModel: ObservableObject {
@@ -29,9 +30,12 @@ final class IntentAppModel: ObservableObject {
     @Published var lastNotice: String?
     @Published var lastSuccessfulPollAt: Date?
     @Published var metricsWindowDays = 21
+    @Published var dailyReports: [IntentGeneratedDailyReport]
+    @Published var isGeneratingDailyReport = false
 
     private var pollingTask: Task<Void, Never>?
     private var metricsTask: Task<Void, Never>?
+    private var dailyReportTask: Task<Void, Never>?
     private var isPullInFlight = false
     private var startFocusInFlight = Set<String>()
     private var completeFocusInFlight = Set<String>()
@@ -48,11 +52,15 @@ final class IntentAppModel: ObservableObject {
     private let reconnectPollIntervalSeconds: TimeInterval = 60
     private let metricsRefreshIntervalSeconds: TimeInterval = 300
     private let shortcutRefreshIntervalSeconds: TimeInterval = 60
+    private let dailyReportCheckIntervalSeconds: TimeInterval = 60
+    private let dailyReportStore: IntentDailyReportStore
 
     init() {
         let configuration = IntentLocalConfiguration.load()
         self.configuration = configuration
         self.openAIAPIKey = IntentSecretStore.openAIAPIKey() ?? ""
+        self.dailyReportStore = .shared
+        self.dailyReports = IntentDailyReportStore.shared.load()
         if configuration.isPaired {
             connectionStatus = "Ready"
         }
@@ -74,6 +82,10 @@ final class IntentAppModel: ObservableObject {
         !openAIAPIKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    var latestDailyReport: IntentGeneratedDailyReport? {
+        dailyReports.sorted { $0.intervalStartMs > $1.intervalStartMs }.first
+    }
+
     func start() {
         guard configuration.isPaired else {
             return
@@ -92,6 +104,13 @@ final class IntentAppModel: ObservableObject {
                 await self.metricsLoop()
             }
         }
+
+        if dailyReportTask == nil {
+            dailyReportTask = Task { [weak self] in
+                guard let self else { return }
+                await self.dailyReportLoop()
+            }
+        }
     }
 
     func stop() {
@@ -99,6 +118,8 @@ final class IntentAppModel: ObservableObject {
         pollingTask = nil
         metricsTask?.cancel()
         metricsTask = nil
+        dailyReportTask?.cancel()
+        dailyReportTask = nil
     }
 
     func updateConfiguration(_ update: (inout IntentLocalConfiguration) -> Void) {
@@ -229,6 +250,7 @@ final class IntentAppModel: ObservableObject {
                     countMetrics: draft.countMetrics,
                     booleanMetrics: draft.booleanMetrics,
                     taskCategory: draft.taskCategory,
+                    projectName: draft.projectName.isEmpty ? nil : draft.projectName,
                     whatWentWell: draft.whatWentWell.isEmpty ? nil : draft.whatWentWell,
                     whatDidntGoWell: draft.whatDidntGoWell.isEmpty ? nil : draft.whatDidntGoWell
                 )
@@ -254,7 +276,10 @@ final class IntentAppModel: ObservableObject {
 
         activeReview = IntentReviewContext(
             session: pendingReview,
-            draft: IntentReviewDraft(existingReview: pendingReview.existingReview)
+            draft: IntentReviewDraft(
+                existingReview: pendingReview.existingReview,
+                sessionProjectName: pendingReview.projectName
+            )
         )
         NSApplication.shared.activate(ignoringOtherApps: true)
     }
@@ -325,6 +350,22 @@ final class IntentAppModel: ObservableObject {
         )
     }
 
+    func generateLatestCompletedDailyReport(force: Bool = true) async {
+        guard configuration.isPaired else {
+            return
+        }
+
+        let window = IntentDailyReportScheduler.mostRecentCompletedWindow(
+            relativeTo: Date(),
+            minutesAfterMidnight: configuration.dailyReportTimeMinutes
+        )
+        await generateDailyReport(
+            for: window,
+            force: force,
+            notifyWhenReady: configuration.notifyWhenDailyReportReady
+        )
+    }
+
     private var deviceSettingsPayload: IntentDeviceSettingsPayload {
         IntentDeviceSettingsPayload(
             autoStartFocus: configuration.autoStartFocus,
@@ -369,6 +410,22 @@ final class IntentAppModel: ObservableObject {
             } catch {
                 return
             }
+        }
+    }
+
+    private func dailyReportLoop() async {
+        await maybeGenerateScheduledDailyReport()
+
+        while !Task.isCancelled {
+            do {
+                try await Task.sleep(
+                    nanoseconds: UInt64(dailyReportCheckIntervalSeconds * 1_000_000_000)
+                )
+            } catch {
+                return
+            }
+
+            await maybeGenerateScheduledDailyReport()
         }
     }
 
@@ -535,7 +592,10 @@ final class IntentAppModel: ObservableObject {
 
         activeReview = IntentReviewContext(
             session: review,
-            draft: IntentReviewDraft(existingReview: review.existingReview)
+            draft: IntentReviewDraft(
+                existingReview: review.existingReview,
+                sessionProjectName: review.projectName
+            )
         )
 
         NSApplication.shared.activate(ignoringOtherApps: true)
@@ -733,6 +793,112 @@ final class IntentAppModel: ObservableObject {
         }
     }
 
+    private func maybeGenerateScheduledDailyReport() async {
+        guard configuration.isPaired, configuration.dailyReportEnabled else {
+            return
+        }
+
+        let window = IntentDailyReportScheduler.mostRecentCompletedWindow(
+            relativeTo: Date(),
+            minutesAfterMidnight: configuration.dailyReportTimeMinutes
+        )
+        await generateDailyReport(
+            for: window,
+            force: false,
+            notifyWhenReady: configuration.notifyWhenDailyReportReady
+        )
+    }
+
+    private func generateDailyReport(
+        for window: IntentDailyReportWindow,
+        force: Bool,
+        notifyWhenReady: Bool
+    ) async {
+        guard configuration.isPaired else {
+            return
+        }
+
+        if !force && dailyReports.contains(where: { $0.dayKey == window.dayKey }) {
+            return
+        }
+
+        guard !isGeneratingDailyReport else {
+            return
+        }
+
+        isGeneratingDailyReport = true
+        defer { isGeneratingDailyReport = false }
+
+        do {
+            let context = try await loadDailyReportContext(for: window)
+            let generation = try await buildDailyReport(context: context, window: window)
+            let generatedAtMs = Int(Date().timeIntervalSince1970 * 1000)
+            let report = IntentGeneratedDailyReport(
+                id: window.dayKey,
+                dayKey: window.dayKey,
+                title: window.title,
+                headline: generation.payload.headline,
+                overview: generation.payload.overview,
+                stats: generation.payload.stats,
+                whatWentWell: generation.payload.whatWentWell,
+                whatDidntGoWell: generation.payload.whatDidntGoWell,
+                improvements: generation.payload.improvements,
+                intervalStartMs: Int(window.startDate.timeIntervalSince1970 * 1000),
+                intervalEndMs: Int(window.endDate.timeIntervalSince1970 * 1000),
+                generatedAtMs: generatedAtMs,
+                source: generation.source
+            )
+
+            dailyReports = try dailyReportStore.upsert(report)
+
+            if generation.source == .fallback, isAIConfigured {
+                lastNotice = "\(report.title) was saved with a fallback summary because AI generation failed."
+            } else {
+                lastNotice = "\(report.title) is ready."
+            }
+            lastError = nil
+
+            if notifyWhenReady {
+                await notifyDailyReportReady(report)
+            }
+        } catch {
+            lastNotice = nil
+            lastError = displayMessage(for: error)
+        }
+    }
+
+    private func loadDailyReportContext(
+        for window: IntentDailyReportWindow
+    ) async throws -> IntentDailyReportContext {
+        let response: IntentDailyReportContextEnvelope = try await post(
+            path: "/intent/device/daily-report",
+            body: IntentDeviceDailyReportRequest(
+                deviceId: configuration.deviceId,
+                deviceSecret: configuration.deviceSecret,
+                startTimeMs: Int(window.startDate.timeIntervalSince1970 * 1000),
+                endTimeMs: Int(window.endDate.timeIntervalSince1970 * 1000)
+            )
+        )
+        return response.state
+    }
+
+    private func buildDailyReport(
+        context: IntentDailyReportContext,
+        window: IntentDailyReportWindow
+    ) async throws -> (payload: IntentDailyReportPayload, source: IntentGeneratedDailyReport.Source) {
+        do {
+            let payload = try await IntentDailyReportGenerationService().generate(
+                context: context,
+                window: window
+            )
+            return (payload, .ai)
+        } catch IntentDailyReportError.missingAPIKey {
+            return (IntentDailyReportFallbackBuilder.build(context: context, window: window), .fallback)
+        } catch {
+            return (IntentDailyReportFallbackBuilder.build(context: context, window: window), .fallback)
+        }
+    }
+
     private func validate(response: URLResponse, data: Data) throws {
         guard let httpResponse = response as? HTTPURLResponse else {
             throw URLError(.badServerResponse)
@@ -871,6 +1037,65 @@ final class IntentAppModel: ObservableObject {
         }
 
         return output
+    }
+
+    private func notifyDailyReportReady(_ report: IntentGeneratedDailyReport) async {
+        let center = UNUserNotificationCenter.current()
+        let authorizationStatus = await notificationAuthorizationStatus(for: center)
+        if authorizationStatus == .denied {
+            return
+        }
+
+        if authorizationStatus == .notDetermined {
+            let granted = await requestNotificationAuthorization(for: center)
+            guard granted else {
+                return
+            }
+        }
+
+        let content = UNMutableNotificationContent()
+        content.title = report.title
+        content.body = report.headline
+        content.sound = .default
+
+        let request = UNNotificationRequest(
+            identifier: "daily-report-\(report.dayKey)",
+            content: content,
+            trigger: nil
+        )
+
+        await addNotificationRequest(request, to: center)
+    }
+
+    private func notificationAuthorizationStatus(
+        for center: UNUserNotificationCenter
+    ) async -> UNAuthorizationStatus {
+        await withCheckedContinuation { continuation in
+            center.getNotificationSettings { settings in
+                continuation.resume(returning: settings.authorizationStatus)
+            }
+        }
+    }
+
+    private func requestNotificationAuthorization(
+        for center: UNUserNotificationCenter
+    ) async -> Bool {
+        await withCheckedContinuation { continuation in
+            center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+                continuation.resume(returning: granted)
+            }
+        }
+    }
+
+    private func addNotificationRequest(
+        _ request: UNNotificationRequest,
+        to center: UNUserNotificationCenter
+    ) async {
+        await withCheckedContinuation { continuation in
+            center.add(request) { _ in
+                continuation.resume()
+            }
+        }
     }
 }
 

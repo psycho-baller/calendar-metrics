@@ -46,6 +46,12 @@ struct MenuBarView: View {
                 }
             }
 
+            Button("Generate report") {
+                Task {
+                    await model.generateLatestCompletedDailyReport()
+                }
+            }
+
             Button("Refresh state") {
                 Task {
                     await model.pollOnce()

@@ -10,6 +10,7 @@ import SwiftUI
 
 private enum IntentScreen: String, CaseIterable, Identifiable {
     case dashboard
+    case reports
     case metrics
     case settings
 
@@ -19,6 +20,8 @@ private enum IntentScreen: String, CaseIterable, Identifiable {
         switch self {
         case .dashboard:
             return "Dashboard"
+        case .reports:
+            return "Reports"
         case .metrics:
             return "Visuals"
         case .settings:
@@ -30,6 +33,8 @@ private enum IntentScreen: String, CaseIterable, Identifiable {
         switch self {
         case .dashboard:
             return "Live work ledger"
+        case .reports:
+            return "End-of-day wrap-ups"
         case .metrics:
             return "Patterns and trends"
         case .settings:
@@ -41,6 +46,8 @@ private enum IntentScreen: String, CaseIterable, Identifiable {
         switch self {
         case .dashboard:
             return "square.grid.2x2.fill"
+        case .reports:
+            return "doc.text.image.fill"
         case .metrics:
             return "chart.xyaxis.line"
         case .settings:
@@ -82,6 +89,8 @@ struct ContentView: View {
                 switch selection {
                 case .dashboard:
                     dashboardView
+                case .reports:
+                    IntentReportsView(model: model)
                 case .metrics:
                     IntentMetricsView(model: model)
                 case .settings:
@@ -106,6 +115,7 @@ struct ContentView: View {
                     isSubmitting: model.isSubmittingReview,
                     aiConfigured: model.isAIConfigured,
                     taskCategorySuggestions: taskCategorySuggestions,
+                    projectNameSuggestions: projectNameSuggestions,
                     onExtractCapture: { text in
                         try await model.extractReviewDraft(
                             from: text,
@@ -160,6 +170,13 @@ struct ContentView: View {
 
                     if let latestReflectionNote {
                         Text("Latest note: \(latestReflectionNote)")
+                            .font(.system(size: 14, weight: .medium, design: .rounded))
+                            .foregroundStyle(.primary.opacity(0.85))
+                            .padding(.top, 2)
+                    }
+
+                    if let latestDailyReport = model.latestDailyReport {
+                        Text("Latest report: \(latestDailyReport.headline)")
                             .font(.system(size: 14, weight: .medium, design: .rounded))
                             .foregroundStyle(.primary.opacity(0.85))
                             .padding(.top, 2)
@@ -434,6 +451,7 @@ struct ContentView: View {
             Form {
                 connectionSection
                 automationSection
+                dailyReportSection
                 aiSection
                 deviceSection
                 backendSection
@@ -504,7 +522,30 @@ struct ContentView: View {
                     .foregroundStyle(model.isAIConfigured ? .primary : .secondary)
             }
 
-            Text("Optional. The review sheet can use one freeform note to populate task category, review signals, distractions, and reflection text. Nothing is auto-submitted.")
+            Text("Optional. AI can extract review fields from freeform notes and write higher-signal daily reports. Nothing is auto-submitted.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private var dailyReportSection: some View {
+        Section("Daily report") {
+            Toggle("Generate end-of-day report", isOn: configBinding(\.dailyReportEnabled))
+
+            DatePicker(
+                "Report time",
+                selection: dailyReportTimeBinding,
+                displayedComponents: [.hourAndMinute]
+            )
+            .disabled(!model.configuration.dailyReportEnabled)
+
+            Toggle(
+                "Notify when report is ready",
+                isOn: configBinding(\.notifyWhenDailyReportReady)
+            )
+            .disabled(!model.configuration.dailyReportEnabled)
+
+            Text("The report covers the 24-hour window ending at this time. Set it late, like 2:00 AM, if your day usually runs past midnight.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -610,6 +651,13 @@ struct ContentView: View {
                     }
                 }
                 .disabled(model.isPulling || !model.configuration.isPaired)
+
+                Button("Generate report") {
+                    Task {
+                        await model.generateLatestCompletedDailyReport()
+                    }
+                }
+                .disabled(model.isGeneratingDailyReport || !model.configuration.isPaired)
 
                 if model.deviceState?.pendingReview != nil {
                     Button("Open review") {
@@ -752,6 +800,26 @@ struct ContentView: View {
         return category
     }
 
+    private var projectNameSuggestions: [String] {
+        var counts = [String: Int]()
+        for session in recentSessions {
+            let name = session.projectName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            if name.isEmpty {
+                continue
+            }
+            counts[name, default: 0] += 1
+        }
+
+        return counts
+            .sorted { left, right in
+                if left.value == right.value {
+                    return left.key < right.key
+                }
+                return left.value > right.value
+            }
+            .map(\.key)
+    }
+
     private var taskCategorySuggestions: [String] {
         var counts = [String: Int]()
         for session in recentSessions {
@@ -825,6 +893,26 @@ struct ContentView: View {
         )
     }
 
+    private var dailyReportTimeBinding: Binding<Date> {
+        Binding(
+            get: {
+                let dayStart = Calendar.current.startOfDay(for: Date())
+                return Calendar.current.date(
+                    byAdding: .minute,
+                    value: model.configuration.dailyReportTimeMinutes,
+                    to: dayStart
+                ) ?? dayStart
+            },
+            set: { newValue in
+                let components = Calendar.current.dateComponents([.hour, .minute], from: newValue)
+                let totalMinutes = (components.hour ?? 0) * 60 + (components.minute ?? 0)
+                model.updateConfiguration { configuration in
+                    configuration.dailyReportTimeMinutes = max(0, min(totalMinutes, 1_439))
+                }
+            }
+        )
+    }
+
     private var activeReviewBinding: Binding<IntentReviewContext>? {
         guard model.activeReview != nil else {
             return nil
@@ -840,6 +928,7 @@ struct ContentView: View {
                         workspaceId: 0,
                         togglUserId: nil,
                         togglProjectId: nil,
+                        projectName: nil,
                         togglTaskId: nil,
                         description: "",
                         tags: [],

@@ -102,6 +102,7 @@ function toSessionSummary(session: Doc<"intentSessions">) {
     workspaceId: session.workspaceId,
     togglUserId: session.togglUserId ?? null,
     togglProjectId: session.togglProjectId ?? null,
+    projectName: session.projectName ?? null,
     togglTaskId: session.togglTaskId ?? null,
     description: session.description ?? "",
     tags: parseTags(session.tagJson),
@@ -213,6 +214,19 @@ function sessionDurationMs(session: Doc<"intentSessions">) {
   }
 
   return 0;
+}
+
+function sessionOverlapDurationMs(
+  session: Doc<"intentSessions">,
+  windowStartTimeMs: number,
+  windowEndTimeMs: number,
+  fallbackEndTimeMs: number,
+) {
+  const sessionEndTimeMs =
+    typeof session.stopTimeMs === "number" ? session.stopTimeMs : fallbackEndTimeMs;
+  const clippedStartTimeMs = Math.max(windowStartTimeMs, session.startTimeMs);
+  const clippedEndTimeMs = Math.min(windowEndTimeMs, sessionEndTimeMs);
+  return Math.max(0, clippedEndTimeMs - clippedStartTimeMs);
 }
 
 function metricTitle(key: string) {
@@ -678,6 +692,7 @@ export const upsertSessionFromToggl = internalMutation({
   args: {
     action: v.string(),
     timeEntry: v.any(),
+    projectName: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const timeEntry = args.timeEntry as TogglTimeEntry;
@@ -724,6 +739,7 @@ export const upsertSessionFromToggl = internalMutation({
       workspaceId: timeEntry.workspace_id,
       togglUserId: timeEntry.user_id,
       togglProjectId: timeEntry.project_id,
+      projectName: args.projectName ?? existing?.projectName,
       togglTaskId: timeEntry.task_id,
       description: timeEntry.description,
       tagJson: JSON.stringify(timeEntry.tags ?? []),
@@ -904,7 +920,14 @@ export const submitReview = internalMutation({
       taskCategory: string;
       whatWentWell?: string;
       whatDidntGoWell?: string;
+      projectName?: string;
     };
+
+    if (reviewData.projectName !== undefined) {
+      await ctx.db.patch(sessionId, {
+        projectName: reviewData.projectName,
+      });
+    }
 
     const reviewPatch = {
       taskCategory: reviewData.taskCategory,
@@ -1292,6 +1315,132 @@ export const getDeviceMetricsState = internalQuery({
       reflectionHighlights,
       lastReviewedAt: relevantReviewedSessions[0]?.startTimeMs ?? null,
       lastUpdatedAt: relevantReviewedSessions[0]?.updatedAt ?? null,
+    };
+  },
+});
+
+export const getDeviceDailyReportContext = internalQuery({
+  args: {
+    startTimeMs: v.number(),
+    endTimeMs: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const timestamp = now();
+    const startTimeMs = Math.max(0, Math.round(args.startTimeMs));
+    const endTimeMs = Math.max(startTimeMs, Math.round(args.endTimeMs));
+
+    const completedSessions = await ctx.db
+      .query("intentSessions")
+      .withIndex("by_status_startTimeMs", (q: any) => q.eq("status", "completed"))
+      .order("desc")
+      .collect();
+    const runningSessions = await ctx.db
+      .query("intentSessions")
+      .withIndex("by_status_startTimeMs", (q: any) => q.eq("status", "running"))
+      .order("desc")
+      .collect();
+
+    const relevantSessions = [...completedSessions, ...runningSessions]
+      .filter((session) => {
+        const overlapDurationMs = sessionOverlapDurationMs(
+          session,
+          startTimeMs,
+          endTimeMs,
+          Math.min(timestamp, endTimeMs),
+        );
+        return overlapDurationMs > 0;
+      })
+      .sort((left, right) => left.startTimeMs - right.startTimeMs);
+
+    const sessionReviews = await Promise.all(
+      relevantSessions.map((session) =>
+        ctx.db
+          .query("intentSessionReviews")
+          .withIndex("by_sessionId", (q: any) => q.eq("sessionId", session._id))
+          .first(),
+      ),
+    );
+
+    const reviewSummaries = sessionReviews.map((review) => toReviewSummary(review ?? null));
+    const trackedDurationMs = relevantSessions.reduce((sum, session) => {
+      return (
+        sum +
+        sessionOverlapDurationMs(
+          session,
+          startTimeMs,
+          endTimeMs,
+          Math.min(timestamp, endTimeMs),
+        )
+      );
+    }, 0);
+
+    const focusScores = reviewSummaries
+      .map((review) => review?.numericMetrics.focus)
+      .filter((value): value is number => typeof value === "number");
+    const adherenceScores = reviewSummaries
+      .map((review) => review?.numericMetrics.adherence)
+      .filter((value): value is number => typeof value === "number");
+    const energyScores = reviewSummaries
+      .map((review) => review?.numericMetrics.energy)
+      .filter((value): value is number => typeof value === "number");
+    const distractionCounts = reviewSummaries
+      .map((review) => review?.countMetrics.distractions)
+      .filter((value): value is number => typeof value === "number");
+
+    const categoryCounts = reviewSummaries.reduce((result, review) => {
+      const taskCategory = review?.taskCategory?.trim();
+      if (!taskCategory) {
+        return result;
+      }
+
+      result.set(taskCategory, (result.get(taskCategory) ?? 0) + 1);
+      return result;
+    }, new Map<string, number>());
+
+    const topCategories = [...categoryCounts.entries()]
+      .sort((left, right) => {
+        if (left[1] === right[1]) {
+          return left[0].localeCompare(right[0]);
+        }
+        return right[1] - left[1];
+      })
+      .slice(0, 6)
+      .map(([label, count]) => ({
+        id: label,
+        label,
+        count,
+      }));
+
+    return {
+      generatedAt: timestamp,
+      startTimeMs,
+      endTimeMs,
+      trackedDurationMs,
+      totalSessions: relevantSessions.length,
+      completedSessions: relevantSessions.filter((session) => session.status === "completed")
+        .length,
+      reviewedSessions: reviewSummaries.filter((review) => review !== null).length,
+      pendingReviews: relevantSessions.filter((session) =>
+        isPendingReviewStatus(session.reviewStatus),
+      ).length,
+      averageFocus:
+        focusScores.length > 0 ? roundMetric(averageOf(focusScores)) : null,
+      averageAdherence:
+        adherenceScores.length > 0 ? roundMetric(averageOf(adherenceScores)) : null,
+      averageEnergy:
+        energyScores.length > 0 ? roundMetric(averageOf(energyScores)) : null,
+      totalDistractions: distractionCounts.reduce((sum, value) => sum + value, 0),
+      topCategories,
+      sessions: relevantSessions.map((session, index) => ({
+        ...toSessionSummary(session),
+        durationWithinWindowMs: sessionOverlapDurationMs(
+          session,
+          startTimeMs,
+          endTimeMs,
+          Math.min(timestamp, endTimeMs),
+        ),
+        existingReview: reviewSummaries[index],
+      })),
     };
   },
 });
