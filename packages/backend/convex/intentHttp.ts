@@ -274,6 +274,18 @@ async function fetchTogglProjectName(workspaceId: number, projectId: number) {
   }
 }
 
+async function upsertEnrichedTimeEntry(ctx: any, action: string, timeEntry: TogglTimeEntry) {
+  const projectName = timeEntry.project_id
+    ? await fetchTogglProjectName(timeEntry.workspace_id, timeEntry.project_id)
+    : undefined;
+
+  return await ctx.runMutation(internal.intent.upsertSessionFromToggl, {
+    action,
+    timeEntry,
+    projectName,
+  });
+}
+
 async function ensureTogglWebhook(ctx: any) {
   const workspaceId = getOptionalNumberEnv("TOGGL_WORKSPACE_ID");
   const publicBaseUrl = process.env.INTENT_PUBLIC_BASE_URL;
@@ -734,15 +746,7 @@ export const pullDevice = httpAction(async (ctx, request) => {
 
     const currentTimeEntry = await fetchCurrentTogglTimeEntry();
     if (currentTimeEntry && currentTimeEntry.workspace_id === workspaceId) {
-      const projectName = currentTimeEntry.project_id
-        ? await fetchTogglProjectName(currentTimeEntry.workspace_id, currentTimeEntry.project_id)
-        : undefined;
-
-      const result = await ctx.runMutation(internal.intent.upsertSessionFromToggl, {
-        action: "updated",
-        timeEntry: currentTimeEntry,
-        projectName,
-      });
+      const result = await upsertEnrichedTimeEntry(ctx, "updated", currentTimeEntry);
       pulled = true;
       reason = "Pulled the current Toggl time entry.";
       session = result.session;
@@ -762,15 +766,7 @@ export const pullDevice = httpAction(async (ctx, request) => {
       activeSourceTimeEntryId !== String(currentTimeEntry?.id ?? "")
     ) {
       const syncedTimeEntry = await fetchTogglTimeEntry(activeWorkspaceId, activeTimeEntryId);
-      const projectName = syncedTimeEntry.project_id
-        ? await fetchTogglProjectName(syncedTimeEntry.workspace_id, syncedTimeEntry.project_id)
-        : undefined;
-
-      const result = await ctx.runMutation(internal.intent.upsertSessionFromToggl, {
-        action: "updated",
-        timeEntry: syncedTimeEntry,
-        projectName,
-      });
+      const result = await upsertEnrichedTimeEntry(ctx, "updated", syncedTimeEntry);
 
       if (syncedTimeEntry.stop) {
         pulled = true;
@@ -1034,15 +1030,8 @@ export const togglWebhook = httpAction(async (ctx, request) => {
       eventDetails.workspaceId,
       eventDetails.entityId,
     );
-    const projectName = timeEntry.project_id
-      ? await fetchTogglProjectName(timeEntry.workspace_id, timeEntry.project_id)
-      : undefined;
 
-    const result = await ctx.runMutation(internal.intent.upsertSessionFromToggl, {
-      action: eventDetails.action,
-      timeEntry,
-      projectName,
-    });
+    const result = await upsertEnrichedTimeEntry(ctx, eventDetails.action, timeEntry);
 
     return json(200, {
       ok: true,
