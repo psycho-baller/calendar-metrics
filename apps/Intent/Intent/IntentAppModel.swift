@@ -19,6 +19,7 @@ final class IntentAppModel: ObservableObject {
     }
 
     @Published var deviceState: IntentDeviceState?
+    @Published var dashboardState: IntentDashboardState?
     @Published var metricsState: IntentMetricsState?
     @Published var activeReview: IntentReviewContext?
     @Published var isBootstrapping = false
@@ -34,9 +35,9 @@ final class IntentAppModel: ObservableObject {
     @Published var isGeneratingDailyReport = false
 
     private var pollingTask: Task<Void, Never>?
-    private var metricsTask: Task<Void, Never>?
     private var dailyReportTask: Task<Void, Never>?
     private var isPullInFlight = false
+    private var isDashboardRefreshInFlight = false
     private var startFocusInFlight = Set<String>()
     private var completeFocusInFlight = Set<String>()
     private var presentedReviewInFlight = Set<String>()
@@ -44,15 +45,16 @@ final class IntentAppModel: ObservableObject {
     private var completeFocusRetryAfter = [String: Date]()
     private var knownShortcutNames = Set<String>()
     private var lastShortcutRefreshAt: Date?
+    private var lastDashboardRefreshAt: Date?
     private var unavailableShortcuts = Set<String>()
 
     private let pendingWorkPollIntervalSeconds: TimeInterval = 3
     private let activeSessionPollIntervalSeconds: TimeInterval = 12
     private let idlePollIntervalSeconds: TimeInterval = 45
     private let reconnectPollIntervalSeconds: TimeInterval = 60
-    private let metricsRefreshIntervalSeconds: TimeInterval = 300
     private let shortcutRefreshIntervalSeconds: TimeInterval = 60
     private let dailyReportCheckIntervalSeconds: TimeInterval = 60
+    private let dashboardRefreshDebounceSeconds: TimeInterval = 15
     private let dailyReportStore: IntentDailyReportStore
 
     init() {
@@ -98,13 +100,6 @@ final class IntentAppModel: ObservableObject {
             }
         }
 
-        if metricsTask == nil {
-            metricsTask = Task { [weak self] in
-                guard let self else { return }
-                await self.metricsLoop()
-            }
-        }
-
         if dailyReportTask == nil {
             dailyReportTask = Task { [weak self] in
                 guard let self else { return }
@@ -116,8 +111,6 @@ final class IntentAppModel: ObservableObject {
     func stop() {
         pollingTask?.cancel()
         pollingTask = nil
-        metricsTask?.cancel()
-        metricsTask = nil
         dailyReportTask?.cancel()
         dailyReportTask = nil
     }
@@ -173,7 +166,7 @@ final class IntentAppModel: ObservableObject {
             connectionStatus = response.webhook.configured ? "Connected" : "Paired"
             start()
             await pollOnce()
-            await refreshMetricsOnce()
+            await refreshDashboardOnce()
         } catch {
             lastNotice = nil
             lastError = displayMessage(for: error)
@@ -188,6 +181,7 @@ final class IntentAppModel: ObservableObject {
         }
 
         do {
+            let previousState = deviceState
             let response: IntentDevicePollEnvelope = try await post(
                 path: "/intent/device/poll",
                 body: IntentDevicePollRequest(
@@ -207,6 +201,7 @@ final class IntentAppModel: ObservableObject {
                 lastError = nil
             }
 
+            await maybeRefreshDashboardForStateTransition(from: previousState, to: response.state)
             await handle(response.state)
         } catch {
             connectionStatus = "Disconnected"
@@ -223,7 +218,7 @@ final class IntentAppModel: ObservableObject {
         do {
             _ = try await performPull(showNotice: true)
             await pollOnce()
-            await refreshMetricsOnce()
+            await refreshDashboardOnce()
         } catch {
             lastNotice = nil
             lastError = displayMessage(for: error)
@@ -258,6 +253,7 @@ final class IntentAppModel: ObservableObject {
 
             self.activeReview = nil
             await pollOnce()
+            await refreshDashboardOnce()
             await refreshMetricsOnce()
         } catch {
             lastNotice = nil
@@ -287,6 +283,7 @@ final class IntentAppModel: ObservableObject {
     func resetPairing() {
         stop()
         deviceState = nil
+        dashboardState = nil
         metricsState = nil
         activeReview = nil
         startFocusInFlight.removeAll()
@@ -296,6 +293,7 @@ final class IntentAppModel: ObservableObject {
         completeFocusRetryAfter.removeAll()
         knownShortcutNames.removeAll()
         lastShortcutRefreshAt = nil
+        lastDashboardRefreshAt = nil
         unavailableShortcuts.removeAll()
 
         updateConfiguration { configuration in
@@ -311,6 +309,15 @@ final class IntentAppModel: ObservableObject {
     func refreshMetricsNow() async {
         do {
             try await loadMetrics(showErrors: true)
+        } catch {
+            lastNotice = nil
+            lastError = displayMessage(for: error)
+        }
+    }
+
+    func refreshDashboardNow() async {
+        do {
+            try await loadDashboard(showErrors: true)
         } catch {
             lastNotice = nil
             lastError = displayMessage(for: error)
@@ -392,27 +399,6 @@ final class IntentAppModel: ObservableObject {
         }
     }
 
-    private func metricsLoop() async {
-        while !Task.isCancelled {
-            do {
-                try await loadMetrics(showErrors: metricsState == nil)
-            } catch {
-                if metricsState == nil {
-                    lastNotice = nil
-                    lastError = displayMessage(for: error)
-                }
-            }
-
-            do {
-                try await Task.sleep(
-                    nanoseconds: UInt64(metricsRefreshIntervalSeconds * 1_000_000_000)
-                )
-            } catch {
-                return
-            }
-        }
-    }
-
     private func dailyReportLoop() async {
         await maybeGenerateScheduledDailyReport()
 
@@ -467,6 +453,39 @@ final class IntentAppModel: ObservableObject {
         if let pendingReview = state.pendingReview {
             await maybePresentReview(pendingReview)
         }
+    }
+
+    private func maybeRefreshDashboardForStateTransition(
+        from previousState: IntentDeviceState?,
+        to currentState: IntentDeviceState
+    ) async {
+        guard dashboardState != nil else {
+            return
+        }
+
+        guard dashboardRefreshSignature(for: previousState) != dashboardRefreshSignature(for: currentState) else {
+            return
+        }
+
+        if let lastDashboardRefreshAt,
+           Date().timeIntervalSince(lastDashboardRefreshAt) < dashboardRefreshDebounceSeconds {
+            return
+        }
+
+        await refreshDashboardOnce()
+    }
+
+    private func dashboardRefreshSignature(for state: IntentDeviceState?) -> String {
+        guard let state else {
+            return "none"
+        }
+
+        return [
+            state.activeSession?.id ?? "none",
+            state.activeSession?.status ?? "none",
+            state.pendingReview?.id ?? "none",
+            "\(state.pendingReviewsCount)"
+        ].joined(separator: "|")
     }
 
     private func maybeStartFocus(for session: IntentSessionSummary) async {
@@ -765,6 +784,49 @@ final class IntentAppModel: ObservableObject {
             if metricsState == nil {
                 lastNotice = nil
                 lastError = displayMessage(for: error)
+            }
+        }
+    }
+
+    private func refreshDashboardOnce() async {
+        do {
+            try await loadDashboard(showErrors: false)
+        } catch {
+            if dashboardState == nil {
+                lastNotice = nil
+                lastError = displayMessage(for: error)
+            }
+        }
+    }
+
+    private func loadDashboard(showErrors: Bool) async throws {
+        guard configuration.isPaired else {
+            dashboardState = nil
+            return
+        }
+
+        guard !isDashboardRefreshInFlight else {
+            return
+        }
+
+        isDashboardRefreshInFlight = true
+        defer { isDashboardRefreshInFlight = false }
+
+        do {
+            let response: IntentDeviceDashboardEnvelope = try await post(
+                path: "/intent/device/dashboard",
+                body: IntentDevicePollRequest(
+                    deviceId: configuration.deviceId,
+                    deviceSecret: configuration.deviceSecret,
+                    settings: deviceSettingsPayload
+                )
+            )
+
+            dashboardState = response.state
+            lastDashboardRefreshAt = Date()
+        } catch {
+            if showErrors {
+                throw error
             }
         }
     }

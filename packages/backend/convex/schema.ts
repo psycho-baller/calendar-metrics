@@ -123,6 +123,7 @@ export default defineSchema({
   })
     .index("by_sourceTimeEntryId", ["sourceTimeEntryId"])
     .index("by_status_startTimeMs", ["status", "startTimeMs"])
+    .index("by_focusStatus_updatedAt", ["focusStatus", "updatedAt"])
     .index("by_reviewStatus_updatedAt", ["reviewStatus", "updatedAt"]),
 
   intentSessionReviews: defineTable({

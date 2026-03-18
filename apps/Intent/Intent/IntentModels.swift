@@ -130,6 +130,11 @@ struct IntentDevicePollEnvelope: Decodable {
     let state: IntentDeviceState
 }
 
+struct IntentDeviceDashboardEnvelope: Decodable {
+    let ok: Bool
+    let state: IntentDashboardState
+}
+
 struct IntentDeviceMetricsEnvelope: Decodable {
     let ok: Bool
     let state: IntentMetricsState
@@ -154,6 +159,10 @@ struct IntentDeviceState: Decodable {
     let pendingFocusComplete: IntentSessionSummary?
     let pendingReview: IntentPendingReview?
     let pendingReviewsCount: Int
+}
+
+struct IntentDashboardState: Decodable {
+    let generatedAt: Int
     let recentSessions: [IntentDashboardSession]
 }
 

@@ -384,28 +384,26 @@ async function buildDevicePollState(
 ) {
   const currentIntegration = integration ?? (await getIntegrationDoc(ctx));
 
-  const runningSessions = await ctx.db
+  const activeSession = await ctx.db
     .query("intentSessions")
     .withIndex("by_status_startTimeMs", (q: any) => q.eq("status", "running"))
     .order("desc")
-    .collect();
-
-  const activeSession = runningSessions[0] ?? null;
+    .first();
   const pendingFocusStart =
     device.autoStartFocus && activeSession?.focusStatus === "pending"
       ? activeSession
       : null;
 
-  const pendingFocusCompleteSessions = await ctx.db
+  const focusStartedSessions = await ctx.db
     .query("intentSessions")
-    .withIndex("by_status_startTimeMs", (q: any) => q.eq("status", "completed"))
-    .order("asc")
-    .collect();
+    .withIndex("by_focusStatus_updatedAt", (q: any) => q.eq("focusStatus", "started"))
+    .order("desc")
+    .take(8);
 
   const pendingFocusComplete =
     device.autoCompleteFocus
-      ? pendingFocusCompleteSessions.find(
-          (session: Doc<"intentSessions">) => session.focusStatus === "started",
+      ? focusStartedSessions.find(
+          (session: Doc<"intentSessions">) => session.status === "completed",
         ) ?? null
       : null;
 
@@ -436,25 +434,6 @@ async function buildDevicePollState(
         .withIndex("by_sessionId", (q: any) => q.eq("sessionId", pendingReview._id))
         .first()
     : null;
-
-  const completedSessionsDesc = await ctx.db
-    .query("intentSessions")
-    .withIndex("by_status_startTimeMs", (q: any) => q.eq("status", "completed"))
-    .order("desc")
-    .collect();
-
-  const recentSessions = [...runningSessions, ...completedSessionsDesc]
-    .sort((left, right) => right.startTimeMs - left.startTimeMs)
-    .slice(0, 16);
-
-  const recentSessionReviews = await Promise.all(
-    recentSessions.map((session) =>
-      ctx.db
-        .query("intentSessionReviews")
-        .withIndex("by_sessionId", (q: any) => q.eq("sessionId", session._id))
-        .first(),
-    ),
-  );
 
   return {
     device: {
@@ -494,6 +473,36 @@ async function buildDevicePollState(
         }
       : null,
     pendingReviewsCount: pendingReviewSessions.length,
+  };
+}
+
+async function buildDeviceDashboardState(ctx: any) {
+  const runningSessions = await ctx.db
+    .query("intentSessions")
+    .withIndex("by_status_startTimeMs", (q: any) => q.eq("status", "running"))
+    .order("desc")
+    .take(2);
+  const completedSessionsDesc = await ctx.db
+    .query("intentSessions")
+    .withIndex("by_status_startTimeMs", (q: any) => q.eq("status", "completed"))
+    .order("desc")
+    .take(16);
+
+  const recentSessions = [...runningSessions, ...completedSessionsDesc]
+    .sort((left, right) => right.startTimeMs - left.startTimeMs)
+    .slice(0, 16);
+
+  const recentSessionReviews = await Promise.all(
+    recentSessions.map((session) =>
+      ctx.db
+        .query("intentSessionReviews")
+        .withIndex("by_sessionId", (q: any) => q.eq("sessionId", session._id))
+        .first(),
+    ),
+  );
+
+  return {
+    generatedAt: now(),
     recentSessions: recentSessions.map((session, index) => ({
       ...toSessionSummary(session),
       existingReview: toReviewSummary(recentSessionReviews[index] ?? null),
@@ -1044,6 +1053,13 @@ export const getDevicePollState = internalQuery({
   },
 });
 
+export const getDeviceDashboardState = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    return await buildDeviceDashboardState(ctx);
+  },
+});
+
 export const getDeviceMetricsState = internalQuery({
   args: {
     windowDays: v.optional(v.number()),
@@ -1055,12 +1071,16 @@ export const getDeviceMetricsState = internalQuery({
 
     const reviewedSessionsDesc = await ctx.db
       .query("intentSessions")
-      .withIndex("by_reviewStatus_updatedAt", (q: any) => q.eq("reviewStatus", "submitted"))
+      .withIndex("by_reviewStatus_updatedAt", (q: any) =>
+        q.eq("reviewStatus", "submitted").gte("updatedAt", cutoffTime),
+      )
       .order("desc")
       .collect();
     const completedSessionsDesc = await ctx.db
       .query("intentSessions")
-      .withIndex("by_status_startTimeMs", (q: any) => q.eq("status", "completed"))
+      .withIndex("by_status_startTimeMs", (q: any) =>
+        q.eq("status", "completed").gte("startTimeMs", cutoffTime),
+      )
       .order("desc")
       .collect();
 
@@ -1077,22 +1097,17 @@ export const getDeviceMetricsState = internalQuery({
       )
     ).flat();
 
-    const relevantReviewedSessions = reviewedSessionsDesc.filter(
-      (session) => (session.stopTimeMs ?? session.startTimeMs) >= cutoffTime,
-    );
-    const relevantCompletedSessions = completedSessionsDesc.filter(
-      (session) => (session.stopTimeMs ?? session.startTimeMs) >= cutoffTime,
-    );
+    const relevantReviewedSessions = reviewedSessionsDesc;
+    const relevantCompletedSessions = completedSessionsDesc;
 
     const observations = (
       await ctx.db
         .query("metricObservations")
         .withIndex("by_subjectType_observedAt", (q: any) =>
-          q.eq("subjectType", "intentSession"),
+          q.eq("subjectType", "intentSession").gte("observedAt", cutoffTime),
         )
         .collect()
     )
-      .filter((observation) => observation.observedAt >= cutoffTime)
       .sort((left, right) => left.observedAt - right.observedAt);
 
     const signalBuckets = new Map<string, number[]>();

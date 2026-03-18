@@ -690,6 +690,28 @@ export const deviceMetrics = httpAction(async (ctx, request) => {
   }
 });
 
+export const deviceDashboard = httpAction(async (ctx, request) => {
+  try {
+    const { body } = await readJson<DeviceAuthBody>(request);
+    const device = await authenticateDevice(ctx, body ?? {});
+    if (!device) {
+      return json(401, { error: "Invalid device credentials." });
+    }
+
+    const state = await ctx.runQuery(internal.intent.getDeviceDashboardState, {});
+
+    return json(200, {
+      ok: true,
+      state,
+    });
+  } catch (error) {
+    return json(500, {
+      error:
+        error instanceof Error ? error.message : "Failed to load device dashboard state.",
+    });
+  }
+});
+
 export const deviceDailyReport = httpAction(async (ctx, request) => {
   try {
     const { body } = await readJson<DeviceDailyReportBody>(request);

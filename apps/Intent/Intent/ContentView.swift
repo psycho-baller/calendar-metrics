@@ -142,6 +142,16 @@ struct ContentView: View {
             }
             model.start()
         }
+        .task(id: selection) {
+            switch selection {
+            case .dashboard:
+                await model.refreshDashboardNow()
+            case .metrics:
+                await model.refreshMetricsNow()
+            case .reports, .settings:
+                break
+            }
+        }
     }
 
     private var dashboardView: some View {
@@ -336,6 +346,7 @@ struct ContentView: View {
                             Button("Refresh state") {
                                 Task {
                                     await model.pollOnce()
+                                    await model.refreshDashboardNow()
                                 }
                             }
                             .buttonStyle(.bordered)
@@ -350,6 +361,7 @@ struct ContentView: View {
                             Button("Refresh state") {
                                 Task {
                                     await model.pollOnce()
+                                    await model.refreshDashboardNow()
                                 }
                             }
                             .buttonStyle(.borderedProminent)
@@ -648,6 +660,7 @@ struct ContentView: View {
                 Button("Refresh state") {
                     Task {
                         await model.pollOnce()
+                        await model.refreshDashboardNow()
                     }
                 }
                 .disabled(model.isPulling || !model.configuration.isPaired)
@@ -740,7 +753,7 @@ struct ContentView: View {
     }
 
     private var recentSessions: [IntentDashboardSession] {
-        model.deviceState?.recentSessions ?? []
+        model.dashboardState?.recentSessions ?? []
     }
 
     private var todaySessions: [IntentDashboardSession] {
