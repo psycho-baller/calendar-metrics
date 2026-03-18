@@ -905,11 +905,7 @@ export const submitReview = httpAction(async (ctx, request) => {
     const device = await authenticateDevice(ctx, body ?? {});
     const normalizedCategory = body?.taskCategory?.trim();
 
-    if (
-      !device ||
-      !body?.sessionId ||
-      !normalizedCategory
-    ) {
+    if (!device || !body?.sessionId) {
       return json(400, { error: "Missing required review fields." });
     }
 
@@ -919,7 +915,7 @@ export const submitReview = httpAction(async (ctx, request) => {
         numericMetrics: body.numericMetrics ?? {},
         countMetrics: body.countMetrics ?? {},
         booleanMetrics: body.booleanMetrics ?? {},
-        taskCategory: normalizedCategory,
+        taskCategory: normalizedCategory || undefined,
         projectName: body.projectName?.trim() || undefined,
         whatWentWell: body.whatWentWell?.trim() || undefined,
         whatDidntGoWell: body.whatDidntGoWell?.trim() || undefined,

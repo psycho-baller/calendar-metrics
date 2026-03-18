@@ -46,6 +46,7 @@ final class IntentAppModel: ObservableObject {
     private var startFocusInFlight = Set<String>()
     private var completeFocusInFlight = Set<String>()
     private var presentedReviewInFlight = Set<String>()
+    private var acknowledgedPresentedReviews = Set<String>()
     private var startFocusRetryAfter = [String: Date]()
     private var completeFocusRetryAfter = [String: Date]()
     private var knownShortcutNames = Set<String>()
@@ -235,6 +236,9 @@ final class IntentAppModel: ObservableObject {
 
         do {
             let draft = activeReview.draft
+            guard draft.hasMeaningfulContent else {
+                return
+            }
             let _: IntentOKResponse = try await post(
                 path: "/intent/device/review/submit",
                 body: IntentSubmitReviewRequest(
@@ -244,13 +248,14 @@ final class IntentAppModel: ObservableObject {
                     numericMetrics: draft.numericMetrics,
                     countMetrics: draft.countMetrics,
                     booleanMetrics: draft.booleanMetrics,
-                    taskCategory: draft.taskCategory,
+                    taskCategory: draft.taskCategory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : draft.taskCategory,
                     projectName: draft.projectName.isEmpty ? nil : draft.projectName,
                     whatWentWell: draft.whatWentWell.isEmpty ? nil : draft.whatWentWell,
                     whatDidntGoWell: draft.whatDidntGoWell.isEmpty ? nil : draft.whatDidntGoWell
                 )
             )
 
+            acknowledgedPresentedReviews.insert(activeReview.session.id)
             self.activeReview = nil
             await refreshDashboardOnce()
             await refreshMetricsOnce()
@@ -276,7 +281,7 @@ final class IntentAppModel: ObservableObject {
                 sessionProjectName: pendingReview.projectName
             )
         )
-        NSApplication.shared.activate(ignoringOtherApps: true)
+        bringAppToFront()
     }
 
     func resetPairing() {
@@ -288,6 +293,7 @@ final class IntentAppModel: ObservableObject {
         startFocusInFlight.removeAll()
         completeFocusInFlight.removeAll()
         presentedReviewInFlight.removeAll()
+        acknowledgedPresentedReviews.removeAll()
         startFocusRetryAfter.removeAll()
         completeFocusRetryAfter.removeAll()
         knownShortcutNames.removeAll()
@@ -755,7 +761,23 @@ final class IntentAppModel: ObservableObject {
     }
 
     private func maybePresentReview(_ review: IntentPendingReview) async {
-        if activeReview?.id == review.id {
+        if activeReview?.id != review.id {
+            activeReview = IntentReviewContext(
+                session: review,
+                draft: IntentReviewDraft(
+                    existingReview: review.existingReview,
+                    sessionProjectName: review.projectName
+                )
+            )
+            bringAppToFront()
+        }
+
+        if review.reviewStatus != "pending" {
+            acknowledgedPresentedReviews.insert(review.id)
+            return
+        }
+
+        guard !acknowledgedPresentedReviews.contains(review.id) else {
             return
         }
 
@@ -764,16 +786,6 @@ final class IntentAppModel: ObservableObject {
         }
 
         defer { presentedReviewInFlight.remove(review.id) }
-
-        activeReview = IntentReviewContext(
-            session: review,
-            draft: IntentReviewDraft(
-                existingReview: review.existingReview,
-                sessionProjectName: review.projectName
-            )
-        )
-
-        NSApplication.shared.activate(ignoringOtherApps: true)
 
         do {
             let _: IntentOKResponse = try await post(
@@ -784,10 +796,20 @@ final class IntentAppModel: ObservableObject {
                     sessionId: review.id
                 )
             )
+            acknowledgedPresentedReviews.insert(review.id)
         } catch {
             lastNotice = nil
             lastError = displayMessage(for: error)
         }
+    }
+
+    private func bringAppToFront() {
+        NSApplication.shared.unhide(nil)
+        NSApplication.shared.activate(ignoringOtherApps: true)
+        let frontableWindow = NSApplication.shared.windows.first {
+            $0.canBecomeKey && !$0.isMiniaturized
+        }
+        frontableWindow?.makeKeyAndOrderFront(nil)
     }
 
     private func normalizedBackendBaseURL(from rawValue: String) throws -> URL {

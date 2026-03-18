@@ -6,7 +6,7 @@ type StructuredReviewMetrics = {
   numericMetrics: Record<string, number>;
   countMetrics: Record<string, number>;
   booleanMetrics: Record<string, boolean>;
-  taskCategory: string;
+  taskCategory?: string;
 };
 
 function now() {
@@ -123,7 +123,7 @@ function sessionObservationEntries(
     });
   }
 
-  const taskCategory = review.taskCategory.trim();
+  const taskCategory = review.taskCategory?.trim();
   if (taskCategory) {
     entries.push({
       subjectType: "intentSession",

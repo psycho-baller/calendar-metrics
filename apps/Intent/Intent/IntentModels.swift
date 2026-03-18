@@ -97,7 +97,7 @@ struct IntentSubmitReviewRequest: Encodable {
     let numericMetrics: [String: Int]
     let countMetrics: [String: Int]
     let booleanMetrics: [String: Bool]
-    let taskCategory: String
+    let taskCategory: String?
     let projectName: String?
     let whatWentWell: String?
     let whatDidntGoWell: String?
@@ -542,6 +542,26 @@ struct IntentReviewDraft: Equatable {
 
         return "\(trimmedExisting)\n\n\(trimmedIncoming)"
     }
+
+    var hasMeaningfulContent: Bool {
+        if !taskCategory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return true
+        }
+
+        if !numericMetrics.isEmpty || !countMetrics.isEmpty || !booleanMetrics.isEmpty {
+            return true
+        }
+
+        if !whatWentWell.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return true
+        }
+
+        if !whatDidntGoWell.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return true
+        }
+
+        return false
+    }
 }
 
 struct IntentReviewContext: Identifiable, Equatable {
@@ -564,7 +584,7 @@ struct IntentReviewMetricDefinition: Identifiable, Hashable {
 
 enum IntentReviewCatalog {
     nonisolated static let defaultNumericValue = 5
-    nonisolated static let defaultTaskCategory = "engineering"
+    nonisolated static let defaultTaskCategory = ""
 
     nonisolated static let numericMetricDefinitions: [IntentReviewMetricDefinition] = [
         IntentReviewMetricDefinition(id: "mindfulness", title: "Mindfulness"),

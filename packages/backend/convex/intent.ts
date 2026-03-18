@@ -167,7 +167,7 @@ function normalizedReviewPayload(review: Doc<"intentSessionReviews">) {
     numericMetrics,
     countMetrics,
     booleanMetrics,
-    taskCategory: review.taskCategory ?? "uncategorized",
+    taskCategory: review.taskCategory ?? "",
     whatWentWell: review.whatWentWell ?? "",
     whatDidntGoWell: review.whatDidntGoWell ?? "",
   };
@@ -977,7 +977,7 @@ export const submitReview = internalMutation({
       numericMetrics?: Record<string, number>;
       countMetrics?: Record<string, number>;
       booleanMetrics?: Record<string, boolean>;
-      taskCategory: string;
+      taskCategory?: string;
       whatWentWell?: string;
       whatDidntGoWell?: string;
       projectName?: string;
@@ -990,7 +990,7 @@ export const submitReview = internalMutation({
     }
 
     const reviewPatch = {
-      taskCategory: reviewData.taskCategory,
+      taskCategory: reviewData.taskCategory?.trim() || undefined,
       numericMetricsJson: JSON.stringify(reviewData.numericMetrics ?? {}),
       countMetricsJson: JSON.stringify(reviewData.countMetrics ?? {}),
       booleanMetricsJson: JSON.stringify(reviewData.booleanMetrics ?? {}),
@@ -1258,7 +1258,7 @@ export const getDeviceMetricsState = internalQuery({
             title: session.description ?? "Untitled session",
             observedAt: session.startTimeMs,
             durationMs: sessionDurationMs(session),
-            taskCategory: normalized.taskCategory,
+            taskCategory: normalized.taskCategory || "Uncategorized",
             metrics: {
               ...Object.fromEntries(
                 Object.entries(normalized.numericMetrics).map(([key, value]) => [key, value]),

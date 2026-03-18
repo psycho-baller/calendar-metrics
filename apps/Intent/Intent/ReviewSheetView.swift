@@ -286,9 +286,8 @@ struct ReviewSheetView: View {
             Button("Save review") {
                 onSubmit()
             }
-            .keyboardShortcut(.defaultAction)
             .buttonStyle(.borderedProminent)
-            .disabled(isSubmitting || context.draft.taskCategory.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .disabled(isSubmitting || !context.draft.hasMeaningfulContent)
         }
     }
 
