@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		26D9E0A130AAB10000C0D001 /* ConvexMobile in Frameworks */ = {isa = PBXBuildFile; productRef = 26D9E0A330AAB10000C0D001 /* ConvexMobile */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		25A6C4F72F5FBD3F00687236 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -52,6 +56,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				26D9E0A130AAB10000C0D001 /* ConvexMobile in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -112,6 +117,7 @@
 			);
 			name = Intent;
 			packageProductDependencies = (
+				26D9E0A330AAB10000C0D001 /* ConvexMobile */,
 			);
 			productName = Intent;
 			productReference = 25A6C4E72F5FBD3D00687236 /* Intent.app */;
@@ -195,6 +201,9 @@
 			);
 			mainGroup = 25A6C4DE2F5FBD3D00687236;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				26D9E0A230AAB10000C0D001 /* XCRemoteSwiftPackageReference "convex-swift" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 25A6C4E82F5FBD3D00687236 /* Products */;
 			projectDirPath = "";
@@ -575,6 +584,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		26D9E0A230AAB10000C0D001 /* XCRemoteSwiftPackageReference "convex-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/get-convex/convex-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 0.7.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		26D9E0A330AAB10000C0D001 /* ConvexMobile */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 26D9E0A230AAB10000C0D001 /* XCRemoteSwiftPackageReference "convex-swift" */;
+			productName = ConvexMobile;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 25A6C4DF2F5FBD3D00687236 /* Project object */;
 }

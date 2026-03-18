@@ -2,6 +2,8 @@ import { v } from "convex/values";
 
 import type { Doc, Id } from "./_generated/dataModel";
 import {
+  mutation,
+  query,
   internalMutation,
   internalQuery,
 } from "./_generated/server";
@@ -340,6 +342,9 @@ function buildDeviceHeartbeatPatch(
   device: Doc<"intentDevices">,
   merged: ReturnType<typeof mergeDeviceSettings>,
   timestamp: number,
+  options?: {
+    recordPresence?: boolean;
+  },
 ) {
   const patch: Partial<Doc<"intentDevices">> = {};
 
@@ -363,8 +368,9 @@ function buildDeviceHeartbeatPatch(
   }
 
   const shouldRefreshHeartbeat =
-    typeof device.lastSeenAt !== "number" ||
-    timestamp - device.lastSeenAt >= DEVICE_HEARTBEAT_INTERVAL_MS;
+    options?.recordPresence === true &&
+    (typeof device.lastSeenAt !== "number" ||
+      timestamp - device.lastSeenAt >= DEVICE_HEARTBEAT_INTERVAL_MS);
 
   if (shouldRefreshHeartbeat) {
     patch.lastSeenAt = timestamp;
@@ -619,7 +625,9 @@ export const pollDeviceState = internalMutation({
 
     const timestamp = now();
     const merged = mergeDeviceSettings(device, args.settings as DeviceSettings);
-    const patch = buildDeviceHeartbeatPatch(device, merged, timestamp);
+    const patch = buildDeviceHeartbeatPatch(device, merged, timestamp, {
+      recordPresence: true,
+    });
     const currentDevice =
       Object.keys(patch).length > 0
         ? {
@@ -634,6 +642,49 @@ export const pollDeviceState = internalMutation({
 
     const integration = await getIntegrationDoc(ctx);
     return await buildDevicePollState(ctx, currentDevice, integration);
+  },
+});
+
+export const deviceOperationalStateJson = query({
+  args: {
+    deviceId: v.string(),
+    deviceSecret: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const device = await getDeviceDoc(ctx, args.deviceId);
+    if (!device || device.deviceSecret !== args.deviceSecret) {
+      throw new Error("Invalid device credentials.");
+    }
+
+    const state = await buildDevicePollState(ctx, device);
+    return JSON.stringify(state);
+  },
+});
+
+export const syncDeviceSettings = mutation({
+  args: {
+    deviceId: v.string(),
+    deviceSecret: v.string(),
+    settings: v.optional(v.any()),
+    recordPresence: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const device = await getDeviceDoc(ctx, args.deviceId);
+    if (!device || device.deviceSecret !== args.deviceSecret) {
+      throw new Error("Invalid device credentials.");
+    }
+
+    const timestamp = now();
+    const merged = mergeDeviceSettings(device, args.settings as DeviceSettings);
+    const patch = buildDeviceHeartbeatPatch(device, merged, timestamp, {
+      recordPresence: args.recordPresence ?? false,
+    });
+
+    if (Object.keys(patch).length > 0) {
+      await ctx.db.patch(device._id, patch);
+    }
+
+    return true;
   },
 });
 

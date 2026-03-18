@@ -52,7 +52,7 @@ struct MenuBarView: View {
                 }
             }
 
-            Button("Refresh state") {
+            Button("Reconnect live sync") {
                 Task {
                     await model.pollOnce()
                 }

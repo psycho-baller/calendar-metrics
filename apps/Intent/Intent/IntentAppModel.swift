@@ -7,6 +7,7 @@
 
 import AppKit
 import Combine
+import ConvexMobile
 import Foundation
 import UserNotifications
 
@@ -34,7 +35,11 @@ final class IntentAppModel: ObservableObject {
     @Published var dailyReports: [IntentGeneratedDailyReport]
     @Published var isGeneratingDailyReport = false
 
-    private var pollingTask: Task<Void, Never>?
+    private var convexClient: ConvexClient?
+    private var convexDeploymentURL: String?
+    private var operationalStateSubscription: AnyCancellable?
+    private var webSocketStateSubscription: AnyCancellable?
+    private var settingsSyncTask: Task<Void, Never>?
     private var dailyReportTask: Task<Void, Never>?
     private var isPullInFlight = false
     private var isDashboardRefreshInFlight = false
@@ -47,11 +52,9 @@ final class IntentAppModel: ObservableObject {
     private var lastShortcutRefreshAt: Date?
     private var lastDashboardRefreshAt: Date?
     private var unavailableShortcuts = Set<String>()
+    private var lastObservedWebSocketState: WebSocketState?
 
-    private let pendingWorkPollIntervalSeconds: TimeInterval = 3
-    private let activeSessionPollIntervalSeconds: TimeInterval = 12
-    private let idlePollIntervalSeconds: TimeInterval = 45
-    private let reconnectPollIntervalSeconds: TimeInterval = 60
+    private let settingsSyncDebounceSeconds: TimeInterval = 0.8
     private let shortcutRefreshIntervalSeconds: TimeInterval = 60
     private let dailyReportCheckIntervalSeconds: TimeInterval = 60
     private let dashboardRefreshDebounceSeconds: TimeInterval = 15
@@ -93,12 +96,7 @@ final class IntentAppModel: ObservableObject {
             return
         }
 
-        if pollingTask == nil {
-            pollingTask = Task { [weak self] in
-                guard let self else { return }
-                await self.pollLoop()
-            }
-        }
+        ensureRealtimeConnection(forceReconnect: false)
 
         if dailyReportTask == nil {
             dailyReportTask = Task { [weak self] in
@@ -109,13 +107,15 @@ final class IntentAppModel: ObservableObject {
     }
 
     func stop() {
-        pollingTask?.cancel()
-        pollingTask = nil
+        stopRealtimeConnection()
+        settingsSyncTask?.cancel()
+        settingsSyncTask = nil
         dailyReportTask?.cancel()
         dailyReportTask = nil
     }
 
     func updateConfiguration(_ update: (inout IntentLocalConfiguration) -> Void) {
+        let previous = configuration
         var next = configuration
         update(&next)
         configuration = next
@@ -123,7 +123,34 @@ final class IntentAppModel: ObservableObject {
         lastShortcutRefreshAt = nil
         unavailableShortcuts.removeAll()
 
-        if next.isPaired {
+        let realtimeIdentityChanged =
+            previous.backendBaseURL != next.backendBaseURL ||
+            previous.deviceId != next.deviceId ||
+            previous.deviceSecret != next.deviceSecret
+        let deviceSettingsChanged =
+            previous.autoStartFocus != next.autoStartFocus ||
+            previous.autoCompleteFocus != next.autoCompleteFocus ||
+            previous.autoShowReview != next.autoShowReview ||
+            previous.startShortcutName != next.startShortcutName ||
+            previous.completeShortcutName != next.completeShortcutName ||
+            previous.bundleID != next.bundleID
+
+        if !next.isPaired {
+            stopRealtimeConnection()
+            return
+        }
+
+        if realtimeIdentityChanged {
+            ensureRealtimeConnection(forceReconnect: true)
+        } else {
+            ensureRealtimeConnection(forceReconnect: false)
+        }
+
+        if deviceSettingsChanged {
+            scheduleDeviceSettingsSync(recordPresence: false, immediate: false)
+        }
+
+        if dailyReportTask == nil {
             start()
         }
     }
@@ -163,9 +190,9 @@ final class IntentAppModel: ObservableObject {
 
             lastError = response.webhook.reason
             lastNotice = nil
-            connectionStatus = response.webhook.configured ? "Connected" : "Paired"
+            connectionStatus = response.webhook.configured ? "Connecting" : "Paired"
             start()
-            await pollOnce()
+            await syncDeviceSettingsNow(recordPresence: true, showErrors: false)
             await refreshDashboardOnce()
         } catch {
             lastNotice = nil
@@ -180,34 +207,8 @@ final class IntentAppModel: ObservableObject {
             return
         }
 
-        do {
-            let previousState = deviceState
-            let response: IntentDevicePollEnvelope = try await post(
-                path: "/intent/device/poll",
-                body: IntentDevicePollRequest(
-                    deviceId: configuration.deviceId,
-                    deviceSecret: configuration.deviceSecret,
-                    settings: deviceSettingsPayload
-                )
-            )
-
-            deviceState = response.state
-            lastSuccessfulPollAt = Date()
-            connectionStatus = "Connected"
-            if let lastWebhookError = response.state.integration.lastWebhookError,
-               !lastWebhookError.isEmpty {
-                lastError = lastWebhookError
-            } else {
-                lastError = nil
-            }
-
-            await maybeRefreshDashboardForStateTransition(from: previousState, to: response.state)
-            await handle(response.state)
-        } catch {
-            connectionStatus = "Disconnected"
-            lastNotice = nil
-            lastError = displayMessage(for: error)
-        }
+        ensureRealtimeConnection(forceReconnect: true)
+        await syncDeviceSettingsNow(recordPresence: true, showErrors: true)
     }
 
     func pullNow() async {
@@ -217,7 +218,6 @@ final class IntentAppModel: ObservableObject {
 
         do {
             _ = try await performPull(showNotice: true)
-            await pollOnce()
             await refreshDashboardOnce()
         } catch {
             lastNotice = nil
@@ -252,7 +252,6 @@ final class IntentAppModel: ObservableObject {
             )
 
             self.activeReview = nil
-            await pollOnce()
             await refreshDashboardOnce()
             await refreshMetricsOnce()
         } catch {
@@ -384,18 +383,201 @@ final class IntentAppModel: ObservableObject {
         )
     }
 
-    private func pollLoop() async {
-        while !Task.isCancelled {
-            await pollOnce()
-            let intervalSeconds = nextPollIntervalSeconds()
+    private var deviceSettingsArguments: [String: ConvexEncodable?] {
+        [
+            "autoStartFocus": configuration.autoStartFocus,
+            "autoCompleteFocus": configuration.autoCompleteFocus,
+            "autoShowReview": configuration.autoShowReview,
+            "startShortcutName": configuration.startShortcutName,
+            "completeShortcutName": configuration.completeShortcutName,
+            "bundleId": configuration.bundleID
+        ]
+    }
 
-            do {
-                try await Task.sleep(
-                    nanoseconds: UInt64(intervalSeconds * 1_000_000_000)
-                )
-            } catch {
+    private var realtimeSubscriptionArguments: [String: ConvexEncodable?] {
+        [
+            "deviceId": configuration.deviceId,
+            "deviceSecret": configuration.deviceSecret
+        ]
+    }
+
+    private func ensureRealtimeConnection(forceReconnect: Bool) {
+        guard configuration.isPaired else {
+            stopRealtimeConnection()
+            connectionStatus = "Needs setup"
+            return
+        }
+
+        do {
+            let deploymentURL = try normalizedConvexDeploymentURLString(from: configuration.backendBaseURL)
+            let needsReconnect =
+                forceReconnect ||
+                convexClient == nil ||
+                convexDeploymentURL != deploymentURL
+
+            guard needsReconnect else {
                 return
             }
+
+            stopRealtimeConnection()
+
+            let client = ConvexClient(deploymentUrl: deploymentURL)
+            convexClient = client
+            convexDeploymentURL = deploymentURL
+            connectionStatus = "Connecting"
+
+            webSocketStateSubscription = client.watchWebSocketState()
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] state in
+                    guard let self else { return }
+                    Task { @MainActor in
+                        await self.handleWebSocketState(state)
+                    }
+                }
+
+            operationalStateSubscription = client.subscribe(
+                to: "intent:deviceOperationalStateJson",
+                with: realtimeSubscriptionArguments,
+                yielding: String.self
+            )
+            .receive(on: DispatchQueue.main)
+            .sink(
+                receiveCompletion: { [weak self] completion in
+                    guard let self else { return }
+                    Task { @MainActor in
+                        self.handleRealtimeCompletion(completion)
+                    }
+                },
+                receiveValue: { [weak self] stateJSON in
+                    guard let self else { return }
+                    Task { @MainActor in
+                        await self.applyRealtimeStateJSON(stateJSON)
+                    }
+                }
+            )
+        } catch {
+            stopRealtimeConnection()
+            connectionStatus = "Disconnected"
+            lastNotice = nil
+            lastError = displayMessage(for: error)
+        }
+    }
+
+    private func stopRealtimeConnection() {
+        operationalStateSubscription?.cancel()
+        operationalStateSubscription = nil
+        webSocketStateSubscription?.cancel()
+        webSocketStateSubscription = nil
+        convexClient = nil
+        convexDeploymentURL = nil
+        lastObservedWebSocketState = nil
+    }
+
+    private func scheduleDeviceSettingsSync(recordPresence: Bool, immediate: Bool) {
+        guard configuration.isPaired else {
+            return
+        }
+
+        settingsSyncTask?.cancel()
+        settingsSyncTask = Task { [weak self] in
+            guard let self else { return }
+
+            if !immediate {
+                do {
+                    try await Task.sleep(
+                        nanoseconds: UInt64(settingsSyncDebounceSeconds * 1_000_000_000)
+                    )
+                } catch {
+                    return
+                }
+            }
+
+            await self.syncDeviceSettingsNow(recordPresence: recordPresence, showErrors: false)
+        }
+    }
+
+    private func syncDeviceSettingsNow(recordPresence: Bool, showErrors: Bool) async {
+        guard configuration.isPaired else {
+            return
+        }
+
+        ensureRealtimeConnection(forceReconnect: false)
+
+        guard let convexClient else {
+            if showErrors {
+                lastNotice = nil
+                lastError = "Live sync client is not available."
+            }
+            return
+        }
+
+        do {
+            let _: Bool = try await convexClient.mutation(
+                "intent:syncDeviceSettings",
+                with: [
+                    "deviceId": configuration.deviceId,
+                    "deviceSecret": configuration.deviceSecret,
+                    "settings": deviceSettingsArguments,
+                    "recordPresence": recordPresence
+                ]
+            )
+        } catch {
+            if showErrors {
+                lastNotice = nil
+                lastError = displayMessage(for: error)
+            }
+        }
+    }
+
+    private func handleWebSocketState(_ state: WebSocketState) async {
+        defer {
+            lastObservedWebSocketState = state
+        }
+
+        switch state {
+        case .connected:
+            connectionStatus = "Connected"
+            if lastObservedWebSocketState != .connected {
+                await syncDeviceSettingsNow(recordPresence: true, showErrors: false)
+            }
+        case .connecting:
+            if configuration.isPaired {
+                connectionStatus = "Connecting"
+            }
+        }
+    }
+
+    private func handleRealtimeCompletion(_ completion: Subscribers.Completion<ClientError>) {
+        switch completion {
+        case .finished:
+            connectionStatus = configuration.isPaired ? "Connecting" : "Needs setup"
+        case .failure(let error):
+            connectionStatus = "Disconnected"
+            lastNotice = nil
+            lastError = displayMessage(for: error)
+        }
+    }
+
+    private func applyRealtimeStateJSON(_ stateJSON: String) async {
+        do {
+            let data = Data(stateJSON.utf8)
+            let nextState = try JSONDecoder().decode(IntentDeviceState.self, from: data)
+            let previousState = deviceState
+            deviceState = nextState
+            lastSuccessfulPollAt = Date()
+
+            if let lastWebhookError = nextState.integration.lastWebhookError,
+               !lastWebhookError.isEmpty {
+                lastError = lastWebhookError
+            } else if lastError == nil || lastError?.contains("Toggl") == true {
+                lastError = nil
+            }
+
+            await maybeRefreshDashboardForStateTransition(from: previousState, to: nextState)
+            await handle(nextState)
+        } catch {
+            lastNotice = nil
+            lastError = displayMessage(for: error)
         }
     }
 
@@ -413,32 +595,6 @@ final class IntentAppModel: ObservableObject {
 
             await maybeGenerateScheduledDailyReport()
         }
-    }
-
-    private func nextPollIntervalSeconds() -> TimeInterval {
-        guard configuration.isPaired else {
-            return reconnectPollIntervalSeconds
-        }
-
-        guard connectionStatus == "Connected", let state = deviceState else {
-            return reconnectPollIntervalSeconds
-        }
-
-        if state.pendingFocusStart != nil ||
-            state.pendingFocusComplete != nil ||
-            state.pendingReview != nil ||
-            activeReview != nil ||
-            !startFocusInFlight.isEmpty ||
-            !completeFocusInFlight.isEmpty ||
-            !presentedReviewInFlight.isEmpty {
-            return pendingWorkPollIntervalSeconds
-        }
-
-        if state.activeSession != nil {
-            return activeSessionPollIntervalSeconds
-        }
-
-        return idlePollIntervalSeconds
     }
 
     private func handle(_ state: IntentDeviceState) async {
@@ -659,6 +815,29 @@ final class IntentAppModel: ObservableObject {
         }
 
         return normalizedURL
+    }
+
+    private func normalizedConvexDeploymentURLString(from rawValue: String) throws -> String {
+        let backendURL = try normalizedBackendBaseURL(from: rawValue)
+        guard var components = URLComponents(url: backendURL, resolvingAgainstBaseURL: false),
+              let host = components.host else {
+            throw URLError(.badURL)
+        }
+
+        if host.hasSuffix(".convex.site") {
+            let deploymentName = String(host.dropLast(".convex.site".count))
+            components.host = "\(deploymentName).convex.cloud"
+        }
+
+        components.path = ""
+        components.query = nil
+        components.fragment = nil
+
+        guard let deploymentURL = components.url else {
+            throw URLError(.badURL)
+        }
+
+        return deploymentURL.absoluteString
     }
 
     private func url(for path: String) throws -> URL {

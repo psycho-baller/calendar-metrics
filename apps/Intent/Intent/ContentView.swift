@@ -343,7 +343,7 @@ struct ContentView: View {
                             }
                             .buttonStyle(.borderedProminent)
 
-                            Button("Refresh state") {
+                            Button("Reconnect live sync") {
                                 Task {
                                     await model.pollOnce()
                                     await model.refreshDashboardNow()
@@ -358,7 +358,7 @@ struct ContentView: View {
                             .foregroundStyle(.secondary)
 
                         HStack(spacing: 12) {
-                            Button("Refresh state") {
+                            Button("Reconnect live sync") {
                                 Task {
                                     await model.pollOnce()
                                     await model.refreshDashboardNow()
@@ -416,7 +416,7 @@ struct ContentView: View {
 
             HStack(spacing: 12) {
                 PulseCell(
-                    label: "Last sync",
+                    label: "Last live update",
                     value: model.lastSuccessfulPollAt.map {
                         Self.relativeFormatter.localizedString(for: $0, relativeTo: Date())
                     } ?? "Never",
@@ -580,7 +580,7 @@ struct ContentView: View {
             }
 
             if let lastSeenAt = model.deviceState?.device.lastSeenAt {
-                LabeledContent("Last heartbeat") {
+                LabeledContent("Last presence sync") {
                     Text(Self.dateFormatter.string(from: Date(timeIntervalSince1970: TimeInterval(lastSeenAt) / 1000)))
                 }
             }
@@ -623,7 +623,7 @@ struct ContentView: View {
             }
 
             if let lastSuccessfulPollAt = model.lastSuccessfulPollAt {
-                LabeledContent("Last sync") {
+                LabeledContent("Last live update") {
                     Text(Self.dateFormatter.string(from: lastSuccessfulPollAt))
                 }
             }
@@ -657,7 +657,7 @@ struct ContentView: View {
                         .controlSize(.small)
                 }
 
-                Button("Refresh state") {
+                Button("Reconnect live sync") {
                     Task {
                         await model.pollOnce()
                         await model.refreshDashboardNow()
@@ -679,7 +679,7 @@ struct ContentView: View {
                 }
             }
 
-            Text("`Pull Toggl` is a manual recovery path. Day-to-day detection should come from the webhook and regular backend refreshes.")
+            Text("`Pull Toggl` is a manual recovery path. Day-to-day detection should come from the Toggl webhook and the live Convex subscription.")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
