@@ -589,15 +589,15 @@ enum IntentReviewCatalog {
     nonisolated static let numericMetricDefinitions: [IntentReviewMetricDefinition] = [
         IntentReviewMetricDefinition(id: "mindfulness", title: "Mindfulness"),
         IntentReviewMetricDefinition(id: "discipline", title: "Discipline"),
-        IntentReviewMetricDefinition(id: "engagement", title: "Engagement"),
+//        IntentReviewMetricDefinition(id: "engagement", title: "Engagement"),
         IntentReviewMetricDefinition(id: "focus", title: "Focus"),
-        IntentReviewMetricDefinition(id: "courage", title: "Courage"),
-        IntentReviewMetricDefinition(id: "authenticity", title: "Authenticity"),
+//        IntentReviewMetricDefinition(id: "courage", title: "Courage"),
+//        IntentReviewMetricDefinition(id: "authenticity", title: "Authenticity"),
         IntentReviewMetricDefinition(id: "purpose", title: "Purpose"),
         IntentReviewMetricDefinition(id: "energy", title: "Energy"),
-        IntentReviewMetricDefinition(id: "communication", title: "Communication"),
-        IntentReviewMetricDefinition(id: "uniqueness", title: "Uniqueness"),
-        IntentReviewMetricDefinition(id: "adherence", title: "Adherence"),
+//        IntentReviewMetricDefinition(id: "communication", title: "Communication"),
+//        IntentReviewMetricDefinition(id: "uniqueness", title: "Uniqueness"),
+//        IntentReviewMetricDefinition(id: "adherence", title: "Adherence"),
         IntentReviewMetricDefinition(id: "intentionality", title: "Intentionality"),
     ]
 
