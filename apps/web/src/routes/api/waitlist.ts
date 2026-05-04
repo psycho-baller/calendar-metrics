@@ -98,7 +98,7 @@ async function handleWaitlistRequest(request: Request) {
             App: {
               multi_select: [
                 {
-                  name: "calendar-metrics",
+                  name: "intent",
                 },
               ],
             },

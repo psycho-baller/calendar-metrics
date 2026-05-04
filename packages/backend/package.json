@@ -1,5 +1,5 @@
 {
-  "name": "@calendar-metrics/backend",
+  "name": "@intent/backend",
   "version": "1.0.0",
   "description": "",
   "license": "ISC",
@@ -22,7 +22,7 @@
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@calendar-metrics/config": "workspace:*",
+    "@intent/config": "workspace:*",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^24.3.0",
     "typescript": "catalog:"

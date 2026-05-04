@@ -13,8 +13,8 @@
   },
   "dependencies": {
     "@better-auth/expo": "catalog:",
-    "@calendar-metrics/backend": "workspace:*",
-    "@calendar-metrics/env": "workspace:*",
+    "@intent/backend": "workspace:*",
+    "@intent/env": "workspace:*",
     "@convex-dev/agent": "catalog:",
     "@convex-dev/better-auth": "catalog:",
     "@expo/metro-runtime": "~6.1.2",
@@ -55,7 +55,7 @@
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@calendar-metrics/config": "workspace:*",
+    "@intent/config": "workspace:*",
     "@types/node": "^24.10.0",
     "@types/react": "~19.1.0",
     "typescript": "catalog:"

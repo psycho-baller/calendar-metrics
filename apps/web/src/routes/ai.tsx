@@ -1,4 +1,4 @@
-import { api } from "@calendar-metrics/backend/convex/_generated/api";
+import { api } from "@intent/backend/convex/_generated/api";
 import { useUIMessages, useSmoothText, type UIMessage } from "@convex-dev/agent/react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation } from "convex/react";

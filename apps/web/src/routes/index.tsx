@@ -92,8 +92,8 @@ function HomeComponent() {
             </h2>
           </div>
           <p className="max-w-2xl text-lg leading-8 text-white/58">
-            The product is not about calendar visibility—it's about using metrics to remain accountable.
-            When you track how productive you actually are, you can stop arguing with vibes and start 
+            Intent is not about calendar visibility—it's about using metrics to remain accountable.
+            When you track how productive you actually are, you can stop arguing with vibes and start
             making decisions based on the evidence of your own output.
           </p>
         </div>

@@ -1,5 +1,5 @@
 import { expoClient } from "@better-auth/expo/client";
-import { env } from "@calendar-metrics/env/native";
+import { env } from "@intent/env/native";
 import { convexClient } from "@convex-dev/better-auth/client/plugins";
 import { createAuthClient } from "better-auth/react";
 import Constants from "expo-constants";

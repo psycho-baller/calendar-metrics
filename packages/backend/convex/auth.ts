@@ -10,7 +10,7 @@ import { query } from "./_generated/server";
 import authConfig from "./auth.config";
 
 const siteUrl = process.env.SITE_URL!;
-const nativeAppUrl = process.env.NATIVE_APP_URL || "calendar-metrics://";
+const nativeAppUrl = process.env.NATIVE_APP_URL || "intent://";
 
 export const authComponent = createClient<DataModel>(components.betterAuth);
 

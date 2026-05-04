@@ -1,6 +1,6 @@
 import "@/polyfills";
 import "@/global.css";
-import { env } from "@calendar-metrics/env/native";
+import { env } from "@intent/env/native";
 import { ConvexBetterAuthProvider } from "@convex-dev/better-auth/react";
 import { ConvexReactClient } from "convex/react";
 import { Stack } from "expo-router";

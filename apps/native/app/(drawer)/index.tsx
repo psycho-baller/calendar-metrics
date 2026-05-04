@@ -1,4 +1,4 @@
-import { api } from "@calendar-metrics/backend/convex/_generated/api";
+import { api } from "@intent/backend/convex/_generated/api";
 import { useConvexAuth, useQuery } from "convex/react";
 import { Button, Chip, Divider, Spinner, Surface, useThemeColor } from "heroui-native";
 import { Text, View } from "react-native";

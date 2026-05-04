@@ -9,8 +9,8 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.0.0",
-    "@calendar-metrics/backend": "workspace:*",
-    "@calendar-metrics/env": "workspace:*",
+    "@intent/backend": "workspace:*",
+    "@intent/env": "workspace:*",
     "@convex-dev/agent": "catalog:",
     "@convex-dev/better-auth": "catalog:",
     "@convex-dev/react-query": "^0.1.0",
@@ -43,7 +43,7 @@
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@calendar-metrics/config": "workspace:*",
+    "@intent/config": "workspace:*",
     "@tanstack/react-router-devtools": "^1.141.1",
     "@testing-library/dom": "^10.4.0",
     "@testing-library/react": "^16.2.0",

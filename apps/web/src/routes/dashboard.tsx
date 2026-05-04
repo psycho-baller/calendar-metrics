@@ -1,4 +1,4 @@
-import { api } from "@calendar-metrics/backend/convex/_generated/api";
+import { api } from "@intent/backend/convex/_generated/api";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Authenticated, AuthLoading, Unauthenticated, useAction, useQuery } from "convex/react";
 import type { ReactNode } from "react";

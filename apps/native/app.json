@@ -1,13 +1,13 @@
 {
   "expo": {
-    "scheme": "calendar-metrics",
+    "scheme": "intent",
     "userInterfaceStyle": "automatic",
     "orientation": "default",
     "web": {
       "bundler": "metro"
     },
-    "name": "calendar-metrics",
-    "slug": "calendar-metrics",
+    "name": "intent",
+    "slug": "intent",
     "plugins": ["expo-font"],
     "experiments": {
       "typedRoutes": true,

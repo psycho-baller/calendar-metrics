@@ -1,4 +1,4 @@
-import { api } from "@calendar-metrics/backend/convex/_generated/api";
+import { api } from "@intent/backend/convex/_generated/api";
 import { useUIMessages, useSmoothText, type UIMessage } from "@convex-dev/agent/react";
 import { Ionicons } from "@expo/vector-icons";
 import { useMutation } from "convex/react";

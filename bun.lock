@@ -2,14 +2,14 @@
   "lockfileVersion": 1,
   "workspaces": {
     "": {
-      "name": "calendar-metrics",
+      "name": "intent",
       "dependencies": {
-        "@calendar-metrics/env": "workspace:*",
+        "@intent/env": "workspace:*",
         "dotenv": "catalog:",
         "zod": "catalog:",
       },
       "devDependencies": {
-        "@calendar-metrics/config": "workspace:*",
+        "@intent/config": "workspace:*",
         "turbo": "^2.6.3",
         "typescript": "catalog:",
       },
@@ -19,13 +19,13 @@
       "version": "1.0.0",
       "dependencies": {
         "@better-auth/expo": "catalog:",
-        "@calendar-metrics/backend": "workspace:*",
-        "@calendar-metrics/env": "workspace:*",
         "@convex-dev/agent": "catalog:",
         "@convex-dev/better-auth": "catalog:",
         "@expo/metro-runtime": "~6.1.2",
         "@expo/vector-icons": "^15.0.3",
         "@gorhom/bottom-sheet": "^5",
+        "@intent/backend": "workspace:*",
+        "@intent/env": "workspace:*",
         "@react-navigation/drawer": "^7.3.9",
         "@react-navigation/elements": "^2.8.1",
         "@stardazed/streams-text-encoding": "^1.0.2",
@@ -61,7 +61,7 @@
         "zod": "catalog:",
       },
       "devDependencies": {
-        "@calendar-metrics/config": "workspace:*",
+        "@intent/config": "workspace:*",
         "@types/node": "^24.10.0",
         "@types/react": "~19.1.0",
         "typescript": "catalog:",
@@ -71,11 +71,11 @@
       "name": "web",
       "dependencies": {
         "@base-ui/react": "^1.0.0",
-        "@calendar-metrics/backend": "workspace:*",
-        "@calendar-metrics/env": "workspace:*",
         "@convex-dev/agent": "catalog:",
         "@convex-dev/better-auth": "catalog:",
         "@convex-dev/react-query": "^0.1.0",
+        "@intent/backend": "workspace:*",
+        "@intent/env": "workspace:*",
         "@tailwindcss/vite": "^4.1.8",
         "@tanstack/react-form": "^1.23.5",
         "@tanstack/react-query": "^5.80.6",
@@ -105,7 +105,7 @@
         "zod": "catalog:",
       },
       "devDependencies": {
-        "@calendar-metrics/config": "workspace:*",
+        "@intent/config": "workspace:*",
         "@tanstack/react-router-devtools": "^1.141.1",
         "@testing-library/dom": "^10.4.0",
         "@testing-library/react": "^16.2.0",
@@ -119,7 +119,7 @@
       },
     },
     "packages/backend": {
-      "name": "@calendar-metrics/backend",
+      "name": "@intent/backend",
       "version": "1.0.0",
       "dependencies": {
         "@ai-sdk/google": "^2.0.52",
@@ -135,18 +135,18 @@
         "zod": "catalog:",
       },
       "devDependencies": {
-        "@calendar-metrics/config": "workspace:*",
+        "@intent/config": "workspace:*",
         "@types/js-yaml": "^4.0.9",
         "@types/node": "^24.3.0",
         "typescript": "catalog:",
       },
     },
     "packages/config": {
-      "name": "@calendar-metrics/config",
+      "name": "@intent/config",
       "version": "0.0.0",
     },
     "packages/env": {
-      "name": "@calendar-metrics/env",
+      "name": "@intent/env",
       "version": "0.0.0",
       "dependencies": {
         "@t3-oss/env-core": "^0.13.1",
@@ -154,7 +154,7 @@
         "zod": "catalog:",
       },
       "devDependencies": {
-        "@calendar-metrics/config": "workspace:*",
+        "@intent/config": "workspace:*",
         "typescript": "catalog:",
       },
     },
@@ -392,12 +392,6 @@
 
     "@braintree/sanitize-url": ["@braintree/sanitize-url@7.1.1", "", {}, "sha512-i1L7noDNxtFyL5DmZafWy1wRVhGehQmzZaz1HiN5e7iylJMSZR7ekOV7NsIqa5qBldlLrsKv4HbgFUVlQrz8Mw=="],
 
-    "@calendar-metrics/backend": ["@calendar-metrics/backend@workspace:packages/backend"],
-
-    "@calendar-metrics/config": ["@calendar-metrics/config@workspace:packages/config"],
-
-    "@calendar-metrics/env": ["@calendar-metrics/env@workspace:packages/env"],
-
     "@chevrotain/cst-dts-gen": ["@chevrotain/cst-dts-gen@11.0.3", "", { "dependencies": { "@chevrotain/gast": "11.0.3", "@chevrotain/types": "11.0.3", "lodash-es": "4.17.21" } }, "sha512-BvIKpRLeS/8UbfxXxgC33xOumsacaeCKAjAeLyOn7Pcp95HiRbrpl14S+9vaZLolnbssPIUuiUd8IvgkRyt6NQ=="],
 
     "@chevrotain/gast": ["@chevrotain/gast@11.0.3", "", { "dependencies": { "@chevrotain/types": "11.0.3", "lodash-es": "4.17.21" } }, "sha512-+qNfcoNk70PyS/uxmj3li5NiECO+2YKZZQMbmjTqRI3Qchu8Hig/Q9vgkHpI3alNjr7M+a2St5pw5w5F6NL5/Q=="],
@@ -567,6 +561,12 @@
     "@inquirer/figures": ["@inquirer/figures@1.0.15", "", {}, "sha512-t2IEY+unGHOzAaVM5Xx6DEWKeXlDDcNPeDyUpsRc6CUhBfU3VQOEl+Vssh7VNp1dR8MdUJBWhuObjXCsVpjN5g=="],
 
     "@inquirer/type": ["@inquirer/type@3.0.10", "", { "peerDependencies": { "@types/node": ">=18" }, "optionalPeers": ["@types/node"] }, "sha512-BvziSRxfz5Ov8ch0z/n3oijRSEcEsHnhggm4xFZe93DHcUCTlutlq9Ox4SVENAfcRD22UQq7T/atg9Wr3k09eA=="],
+
+    "@intent/backend": ["@intent/backend@workspace:packages/backend"],
+
+    "@intent/config": ["@intent/config@workspace:packages/config"],
+
+    "@intent/env": ["@intent/env@workspace:packages/env"],
 
     "@isaacs/balanced-match": ["@isaacs/balanced-match@4.0.1", "", {}, "sha512-yzMTt9lEb8Gv7zRioUilSglI0c0smZ9k5D65677DLWLtWJaXIS3CqcGyUFByYKlnUj6TkjLVs54fBl6+TiGQDQ=="],
 

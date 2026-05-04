@@ -1,5 +1,5 @@
 {
-  "name": "calendar-metrics",
+  "name": "intent",
   "private": true,
   "workspaces": {
     "packages": [
@@ -24,16 +24,16 @@
     "check-types": "turbo check-types",
     "dev:native": "turbo -F native dev",
     "dev:web": "turbo -F web dev",
-    "dev:server": "turbo -F @calendar-metrics/backend dev",
-    "dev:setup": "turbo -F @calendar-metrics/backend dev:setup"
+    "dev:server": "turbo -F @intent/backend dev",
+    "dev:setup": "turbo -F @intent/backend dev:setup"
   },
   "dependencies": {
-    "@calendar-metrics/env": "workspace:*",
+    "@intent/env": "workspace:*",
     "dotenv": "catalog:",
     "zod": "catalog:"
   },
   "devDependencies": {
-    "@calendar-metrics/config": "workspace:*",
+    "@intent/config": "workspace:*",
     "turbo": "^2.6.3",
     "typescript": "catalog:"
   },

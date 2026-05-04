@@ -1,4 +1,4 @@
-import { api } from "@calendar-metrics/backend/convex/_generated/api";
+import { api } from "@intent/backend/convex/_generated/api";
 import { useQuery } from "convex/react";
 
 import {

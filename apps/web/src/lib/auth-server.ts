@@ -1,4 +1,4 @@
-import { env } from "@calendar-metrics/env/web";
+import { env } from "@intent/env/web";
 import { convexBetterAuthReactStart } from "@convex-dev/better-auth/react-start";
 
 export const { handler, getToken, fetchAuthQuery, fetchAuthMutation, fetchAuthAction } =
