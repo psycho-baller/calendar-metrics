@@ -1,6 +1,7 @@
 import { api } from "@calendar-metrics/backend/convex/_generated/api";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Authenticated, AuthLoading, Unauthenticated, useAction, useQuery } from "convex/react";
+import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
@@ -32,25 +33,25 @@ import { Skeleton } from "@/components/ui/skeleton";
 import UserMenu from "@/components/user-menu";
 import { cn } from "@/lib/utils";
 
-type NumericMetricStats = {
+export type NumericMetricStats = {
   count: number;
   avg: number;
   min: number;
   max: number;
 };
 
-type CategoricalMetricStats = {
+export type CategoricalMetricStats = {
   count: number;
   valueCounts: Record<string, number>;
   topValue: string;
 };
 
-type DashboardMetricsSummary = {
+export type DashboardMetricsSummary = {
   numeric: Record<string, NumericMetricStats>;
   categorical: Record<string, CategoricalMetricStats>;
 };
 
-type RecentActivityItem = {
+export type RecentActivityItem = {
   id: string;
   title: string;
   date: number;
@@ -58,14 +59,14 @@ type RecentActivityItem = {
   metrics: Array<{ key: string; value: number | boolean | string }>;
 };
 
-type MetricTimeSeriesPoint = {
+export type MetricTimeSeriesPoint = {
   date: number;
   value: number;
   subjectTitle: string;
   subjectType: "event" | "intentSession";
 };
 
-type DailyAggregate = {
+export type DailyAggregate = {
   dateStr: string;
   sessionCount: number;
   anyActivity: boolean;
@@ -74,7 +75,7 @@ type DailyAggregate = {
   compositeScore: number;
 };
 
-type WeeklyComparison = {
+export type WeeklyComparison = {
   thisWeek: Record<string, number>;
   lastWeek: Record<string, number>;
 };
@@ -139,6 +140,8 @@ function heatmapCellClass(data: DailyAggregate | undefined): string {
 }
 
 const HERO_TONES = ["#0f766e", "#ea580c", "#2563eb", "#be185d", "#7c3aed"];
+const CHART_TEXT = "var(--foreground)";
+const CHART_MUTED_TEXT = "var(--muted-foreground)";
 
 export const Route = createFileRoute("/dashboard")({
   component: RouteComponent,
@@ -175,6 +178,15 @@ function DashboardContent() {
   const weeklyComparison = useQuery(api.analytics.getWeeklyComparison) as WeeklyComparison | undefined;
   const [selectedMetric, setSelectedMetric] = useState<string | null>(null);
   const [metricWindowDays, setMetricWindowDays] = useState(30);
+  const metricTimeSeries = useQuery(
+    api.analytics.getMetricTimeSeries,
+    selectedMetric
+      ? {
+          key: selectedMetric,
+          days: metricWindowDays,
+        }
+      : "skip",
+  ) as MetricTimeSeriesPoint[] | undefined;
 
   useEffect(() => {
     if (userSettings !== undefined && !userSettings?.onboardingCompleted) {
@@ -182,6 +194,65 @@ function DashboardContent() {
     }
   }, [navigate, userSettings]);
 
+  if (userSettings === undefined) {
+    return (
+      <div className="flex min-h-[60vh] items-center justify-center">
+        <div className="animate-pulse text-muted-foreground">Loading...</div>
+      </div>
+    );
+  }
+
+  return (
+    <DashboardView
+      userSettings={userSettings}
+      metricsSummary={metricsSummary as DashboardMetricsSummary | undefined}
+      recentActivity={(recentActivity || []) as RecentActivityItem[]}
+      dailyAggregates={dailyAggregates}
+      weeklyComparison={weeklyComparison}
+      selectedMetric={selectedMetric}
+      onSelectedMetricChange={setSelectedMetric}
+      metricWindowDays={metricWindowDays}
+      onMetricWindowDaysChange={setMetricWindowDays}
+      metricTimeSeries={metricTimeSeries}
+      heroActions={
+        <>
+          <SyncButton />
+          <UserMenu />
+        </>
+      }
+    />
+  );
+}
+
+export type DashboardViewProps = {
+  userSettings?: {
+    selectedCalendarName?: string | null;
+  } | null;
+  metricsSummary?: DashboardMetricsSummary;
+  recentActivity?: RecentActivityItem[];
+  dailyAggregates?: DailyAggregate[];
+  weeklyComparison?: WeeklyComparison;
+  selectedMetric: string | null;
+  onSelectedMetricChange: (value: string) => void;
+  metricWindowDays: number;
+  onMetricWindowDaysChange: (value: number) => void;
+  metricTimeSeries?: MetricTimeSeriesPoint[];
+  heroActions?: ReactNode;
+};
+
+export function DashboardView({
+  userSettings,
+  metricsSummary,
+  recentActivity = [],
+  dailyAggregates,
+  weeklyComparison,
+  selectedMetric,
+  onSelectedMetricChange,
+  metricWindowDays,
+  onMetricWindowDaysChange,
+  metricTimeSeries,
+  heroActions,
+}: DashboardViewProps) {
   const summary = (metricsSummary ?? { numeric: {}, categorical: {} }) as DashboardMetricsSummary;
   const numericMetrics = summary.numeric;
   const categoricalMetrics = summary.categorical;
@@ -203,23 +274,15 @@ function DashboardContent() {
 
   useEffect(() => {
     if (!selectedMetric && availableNumericKeys.length > 0) {
-      setSelectedMetric(availableNumericKeys[0]);
+      onSelectedMetricChange(availableNumericKeys[0]);
     }
-  }, [availableNumericKeys, selectedMetric]);
+  }, [availableNumericKeys, onSelectedMetricChange, selectedMetric]);
 
   useEffect(() => {
     if (selectedMetric && !numericMetrics[selectedMetric] && availableNumericKeys.length > 0) {
-      setSelectedMetric(availableNumericKeys[0]);
+      onSelectedMetricChange(availableNumericKeys[0]);
     }
-  }, [availableNumericKeys, numericMetrics, selectedMetric]);
-
-  if (userSettings === undefined) {
-    return (
-      <div className="flex min-h-[60vh] items-center justify-center">
-        <div className="animate-pulse text-muted-foreground">Loading...</div>
-      </div>
-    );
-  }
+  }, [availableNumericKeys, numericMetrics, onSelectedMetricChange, selectedMetric]);
 
   const hasMetrics = numericEntries.length > 0 || categoricalEntries.length > 0;
   const strongestSignal = numericEntries[0];
@@ -269,10 +332,7 @@ function DashboardContent() {
               </p>
             </div>
 
-            <div className="flex items-center gap-3 self-start">
-              <SyncButton />
-              <UserMenu />
-            </div>
+            {heroActions ? <div className="flex items-center gap-3 self-start">{heroActions}</div> : null}
           </div>
 
           {hasMetrics ? (
@@ -321,13 +381,14 @@ function DashboardContent() {
               <MetricSelectorRail
                 metrics={numericEntries}
                 selectedMetric={selectedMetric}
-                onSelect={setSelectedMetric}
+                onSelect={onSelectedMetricChange}
               />
               <MetricChartPanel
                 metricKey={selectedMetric}
                 stats={selectedMetric ? numericMetrics[selectedMetric] : undefined}
                 metricWindowDays={metricWindowDays}
-                onMetricWindowDaysChange={setMetricWindowDays}
+                onMetricWindowDaysChange={onMetricWindowDaysChange}
+                timeSeries={metricTimeSeries}
               />
             </section>
 
@@ -440,22 +501,14 @@ function MetricChartPanel({
   stats,
   metricWindowDays,
   onMetricWindowDaysChange,
+  timeSeries,
 }: {
   metricKey: string | null;
   stats: NumericMetricStats | undefined;
   metricWindowDays: number;
   onMetricWindowDaysChange: (value: number) => void;
+  timeSeries: MetricTimeSeriesPoint[] | undefined;
 }) {
-  const timeSeries = useQuery(
-    api.analytics.getMetricTimeSeries,
-    metricKey
-      ? {
-          key: metricKey,
-          days: metricWindowDays,
-        }
-      : "skip",
-  ) as MetricTimeSeriesPoint[] | undefined;
-
   return (
     <Card className="rounded-[28px] border border-border/60 bg-card/85 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.55)] backdrop-blur">
       <CardHeader className="border-b border-border/60 pb-5">
@@ -519,9 +572,9 @@ function MetricChartPanel({
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="4 4" stroke="rgba(100,116,139,0.18)" />
-                  <XAxis dataKey="date" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} tickLine={false} axisLine={false} />
-                  <YAxis domain={[0, 10]} tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} tickLine={false} axisLine={false} />
-                  <ReferenceLine y={stats.avg} stroke="rgba(148,163,184,0.35)" strokeDasharray="6 3" label={{ value: `avg ${formatScore(stats.avg)}`, fill: "rgba(148,163,184,0.7)", fontSize: 11, position: "insideTopRight" }} />
+                  <XAxis dataKey="date" tick={{ fill: CHART_MUTED_TEXT, fontSize: 12 }} tickLine={false} axisLine={false} />
+                  <YAxis domain={[0, 10]} tick={{ fill: CHART_MUTED_TEXT, fontSize: 12 }} tickLine={false} axisLine={false} />
+                  <ReferenceLine y={stats.avg} stroke="rgba(148,163,184,0.35)" strokeDasharray="6 3" label={{ value: `avg ${formatScore(stats.avg)}`, fill: CHART_MUTED_TEXT, fontSize: 11, position: "insideTopRight" }} />
                   <Tooltip
                     cursor={{ stroke: "rgba(15,118,110,0.25)", strokeWidth: 1.5 }}
                     contentStyle={{
@@ -626,12 +679,12 @@ function CategoryFieldPanel({
                   margin={{ left: 10, right: 10, top: 10, bottom: 10 }}
                 >
                   <CartesianGrid strokeDasharray="4 4" stroke="rgba(100,116,139,0.18)" horizontal={false} />
-                  <XAxis type="number" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} tickLine={false} axisLine={false} />
+                  <XAxis type="number" tick={{ fill: CHART_MUTED_TEXT, fontSize: 12 }} tickLine={false} axisLine={false} />
                   <YAxis
                     type="category"
                     dataKey="value"
                     width={110}
-                    tick={{ fill: "hsl(var(--foreground))", fontSize: 12 }}
+                    tick={{ fill: CHART_TEXT, fontSize: 12 }}
                     tickLine={false}
                     axisLine={false}
                   />
@@ -1014,11 +1067,11 @@ function RadarPanel({
                 <PolarGrid stroke="rgba(100,116,139,0.2)" />
                 <PolarAngleAxis
                   dataKey="metric"
-                  tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12, fontWeight: 500 }}
+                  tick={{ fill: CHART_TEXT, fontSize: 12, fontWeight: 600 }}
                 />
                 <PolarRadiusAxis
                   domain={[0, 10]}
-                  tick={{ fill: "rgba(100,116,139,0.5)", fontSize: 10 }}
+                  tick={{ fill: CHART_MUTED_TEXT, fontSize: 10 }}
                   axisLine={false}
                   tickCount={3}
                 />
@@ -1108,8 +1161,8 @@ function WeekOverWeekPanel({ weeklyComparison }: { weeklyComparison: WeeklyCompa
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={barData} barGap={2} barCategoryGap="25%">
                   <CartesianGrid strokeDasharray="4 4" stroke="rgba(100,116,139,0.12)" vertical={false} />
-                  <XAxis dataKey="metric" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }} tickLine={false} axisLine={false} />
-                  <YAxis domain={[0, 10]} tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }} tickLine={false} axisLine={false} width={22} />
+                  <XAxis dataKey="metric" tick={{ fill: CHART_TEXT, fontSize: 10, fontWeight: 600 }} tickLine={false} axisLine={false} />
+                  <YAxis domain={[0, 10]} tick={{ fill: CHART_MUTED_TEXT, fontSize: 10 }} tickLine={false} axisLine={false} width={22} />
                   <Tooltip
                     contentStyle={{
                       background: "rgba(15,23,42,0.96)",
@@ -1203,7 +1256,7 @@ function SessionsPerDayChart({ dailyAggregates }: { dailyAggregates: DailyAggreg
               <CartesianGrid strokeDasharray="4 4" stroke="rgba(100,116,139,0.15)" vertical={false} />
               <XAxis
                 dataKey="date"
-                tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
+                tick={{ fill: CHART_MUTED_TEXT, fontSize: 11 }}
                 tickLine={false}
                 axisLine={false}
                 interval={Math.ceil(data.length / 10)}
@@ -1211,7 +1264,7 @@ function SessionsPerDayChart({ dailyAggregates }: { dailyAggregates: DailyAggreg
               <YAxis
                 allowDecimals={false}
                 domain={[0, maxSessions + 1]}
-                tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
+                tick={{ fill: CHART_MUTED_TEXT, fontSize: 11 }}
                 tickLine={false}
                 axisLine={false}
                 width={24}
