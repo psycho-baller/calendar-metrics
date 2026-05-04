@@ -39,7 +39,7 @@ async function handleWaitlistRequest(request: Request) {
     }
 
     const existingEntries = await notionRequest<{ results: Array<{ id: string }> }>(
-      `https://api.notion.com/v1/data_sources/${notionDataSourceId}/query`,
+      `https://api.notion.com/v1/databases/${notionDataSourceId}/query`,
       notionApiKey,
       {
         method: "POST",
@@ -70,8 +70,7 @@ async function handleWaitlistRequest(request: Request) {
         method: "POST",
         body: JSON.stringify({
           parent: {
-            type: "data_source_id",
-            data_source_id: notionDataSourceId,
+            database_id: notionDataSourceId,
           },
           properties: {
             Email: {
