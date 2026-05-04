@@ -1,6 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-
-const NOTION_VERSION = "2022-06-28";
+import { Client } from "@notionhq/client";
 
 export const Route = createFileRoute("/api/waitlist")({
   server: {
@@ -38,22 +37,20 @@ async function handleWaitlistRequest(request: Request) {
       return jsonResponse({ error: "Server configuration error" }, 500);
     }
 
-    const existingEntries = await notionRequest<{ results: Array<{ id: string }> }>(
-      `https://api.notion.com/v1/databases/${notionDataSourceId}/query`,
-      notionApiKey,
-      {
-        method: "POST",
-        body: JSON.stringify({
-          filter: {
-            property: "Email",
-            title: {
-              equals: normalizedEmail,
-            },
-          },
-          page_size: 1,
-        }),
+    // Initialize Notion client (Twilight way)
+    const notion = new Client({ auth: notionApiKey });
+
+    // Check if email already exists using the dataSources API
+    const existingEntries = await notion.dataSources.query({
+      data_source_id: notionDataSourceId,
+      filter: {
+        property: "Email",
+        title: {
+          equals: normalizedEmail,
+        },
       },
-    );
+      page_size: 1,
+    });
 
     if (existingEntries.results.length > 0) {
       return jsonResponse({
@@ -63,48 +60,43 @@ async function handleWaitlistRequest(request: Request) {
       });
     }
 
-    const newPage = await notionRequest<{ id: string }>(
-      "https://api.notion.com/v1/pages",
-      notionApiKey,
-      {
-        method: "POST",
-        body: JSON.stringify({
-          parent: {
-            database_id: notionDataSourceId,
-          },
-          properties: {
-            Email: {
-              title: [
-                {
-                  text: {
-                    content: normalizedEmail,
-                  },
-                },
-              ],
-            },
-            Date: {
-              date: {
-                start: new Date().toISOString(),
+    // Add new email to the database using data_source_id (Twilight way)
+    const newPage = await notion.pages.create({
+      parent: {
+        type: "data_source_id",
+        data_source_id: notionDataSourceId,
+      },
+      properties: {
+        Email: {
+          title: [
+            {
+              text: {
+                content: normalizedEmail,
               },
             },
-            Platform: {
-              multi_select: [
-                {
-                  name: normalizedPlatform,
-                },
-              ],
-            },
-            App: {
-              multi_select: [
-                {
-                  name: "intent",
-                },
-              ],
-            },
+          ],
+        },
+        Date: {
+          date: {
+            start: new Date().toISOString(),
           },
-        }),
+        },
+        Platform: {
+          multi_select: [
+            {
+              name: normalizedPlatform,
+            },
+          ],
+        },
+        App: {
+          multi_select: [
+            {
+              name: "intent",
+            },
+          ],
+        },
       },
-    );
+    });
 
     return jsonResponse({
       success: true,
@@ -123,30 +115,6 @@ async function handleWaitlistRequest(request: Request) {
       500,
     );
   }
-}
-
-async function notionRequest<T>(
-  url: string,
-  notionApiKey: string,
-  init: RequestInit,
-): Promise<T> {
-  const response = await fetch(url, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${notionApiKey}`,
-      "Content-Type": "application/json",
-      "Notion-Version": NOTION_VERSION,
-      ...init.headers,
-    },
-  });
-
-  const data = await response.json();
-
-  if (!response.ok) {
-    throw new Error(data.message || data.error || "Notion request failed");
-  }
-
-  return data as T;
 }
 
 function jsonResponse(data: unknown, status = 200) {
