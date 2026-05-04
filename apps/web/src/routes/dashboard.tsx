@@ -327,7 +327,7 @@ export function DashboardView({
                     reviewed focus sessions from the Mac app.
                   </>
                 ) : (
-                  <>Watching reviewed focus sessions and any synced calendar metrics that carry structured data.</>
+                  <>Watching reviewed focus sessions and any synced Intent metrics that carry structured data.</>
                 )}
               </p>
             </div>

@@ -92,7 +92,7 @@ export default function InlineWaitlistForm({
     <form
       onSubmit={handleSubmit}
       className={cn("w-full max-w-xl", className)}
-      aria-label="Calendar Metrics waitlist form"
+      aria-label="Intent waitlist form"
     >
       <div className="flex items-center gap-3 rounded-full border border-white/12 bg-white/[0.045] py-[6px] pl-5 pr-[8px] shadow-[0_20px_80px_-50px_rgba(20,184,166,0.7)] backdrop-blur-xl">
         <input

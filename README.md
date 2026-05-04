@@ -1,4 +1,4 @@
-# calendar-metrics
+# Intent
 
 This project was created with [Better-T-Stack](https://github.com/AmanVarshney01/create-better-t-stack), a modern TypeScript stack that combines React, TanStack Start, Convex, and more.
 
@@ -79,7 +79,7 @@ These routes are exposed by Convex:
 ## Project Structure
 
 ```
-calendar-metrics/
+intent/
 ├── apps/
 │   ├── web/         # Frontend application (React + TanStack Start)
 │   ├── native/      # Mobile application (React Native, Expo)

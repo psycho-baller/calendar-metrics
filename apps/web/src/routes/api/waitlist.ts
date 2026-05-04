@@ -111,7 +111,7 @@ async function handleWaitlistRequest(request: Request) {
       success: true,
       pageId: newPage.id,
       alreadyAdded: false,
-      message: "Successfully joined the Calendar Metrics waitlist.",
+      message: "Successfully joined the Intent waitlist.",
     });
   } catch (error) {
     console.error("Notion API error:", error);

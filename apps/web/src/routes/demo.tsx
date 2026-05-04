@@ -2,12 +2,12 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 
 import { buttonVariants } from "@/components/ui/button";
-import { createDemoDashboardData } from "@/lib/demo-dashboard-data";
+import { createDemoDashboardData } from "@/lib/demo-data";
 import { cn } from "@/lib/utils";
 
 import { DashboardView } from "./dashboard";
 
-export const Route = createFileRoute("/demo-dashboard")({
+export const Route = createFileRoute("/demo")({
   component: DemoDashboardRoute,
 });
 

@@ -10,7 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
-import { Route as DemoDashboardRouteImport } from './routes/demo-dashboard'
+import { Route as DemoRouteImport } from './routes/demo'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as AiRouteImport } from './routes/ai'
 import { Route as IndexRouteImport } from './routes/index'
@@ -22,9 +22,9 @@ const OnboardingRoute = OnboardingRouteImport.update({
   path: '/onboarding',
   getParentRoute: () => rootRouteImport,
 } as any)
-const DemoDashboardRoute = DemoDashboardRouteImport.update({
-  id: '/demo-dashboard',
-  path: '/demo-dashboard',
+const DemoRoute = DemoRouteImport.update({
+  id: '/demo',
+  path: '/demo',
   getParentRoute: () => rootRouteImport,
 } as any)
 const DashboardRoute = DashboardRouteImport.update({
@@ -57,7 +57,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/ai': typeof AiRoute
   '/dashboard': typeof DashboardRoute
-  '/demo-dashboard': typeof DemoDashboardRoute
+  '/demo': typeof DemoRoute
   '/onboarding': typeof OnboardingRoute
   '/api/waitlist': typeof ApiWaitlistRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -66,7 +66,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/ai': typeof AiRoute
   '/dashboard': typeof DashboardRoute
-  '/demo-dashboard': typeof DemoDashboardRoute
+  '/demo': typeof DemoRoute
   '/onboarding': typeof OnboardingRoute
   '/api/waitlist': typeof ApiWaitlistRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -76,7 +76,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/ai': typeof AiRoute
   '/dashboard': typeof DashboardRoute
-  '/demo-dashboard': typeof DemoDashboardRoute
+  '/demo': typeof DemoRoute
   '/onboarding': typeof OnboardingRoute
   '/api/waitlist': typeof ApiWaitlistRoute
   '/api/auth/$': typeof ApiAuthSplatRoute
@@ -87,7 +87,7 @@ export interface FileRouteTypes {
     | '/'
     | '/ai'
     | '/dashboard'
-    | '/demo-dashboard'
+    | '/demo'
     | '/onboarding'
     | '/api/waitlist'
     | '/api/auth/$'
@@ -96,7 +96,7 @@ export interface FileRouteTypes {
     | '/'
     | '/ai'
     | '/dashboard'
-    | '/demo-dashboard'
+    | '/demo'
     | '/onboarding'
     | '/api/waitlist'
     | '/api/auth/$'
@@ -105,7 +105,7 @@ export interface FileRouteTypes {
     | '/'
     | '/ai'
     | '/dashboard'
-    | '/demo-dashboard'
+    | '/demo'
     | '/onboarding'
     | '/api/waitlist'
     | '/api/auth/$'
@@ -115,7 +115,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AiRoute: typeof AiRoute
   DashboardRoute: typeof DashboardRoute
-  DemoDashboardRoute: typeof DemoDashboardRoute
+  DemoRoute: typeof DemoRoute
   OnboardingRoute: typeof OnboardingRoute
   ApiWaitlistRoute: typeof ApiWaitlistRoute
   ApiAuthSplatRoute: typeof ApiAuthSplatRoute
@@ -130,11 +130,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof OnboardingRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/demo-dashboard': {
-      id: '/demo-dashboard'
-      path: '/demo-dashboard'
-      fullPath: '/demo-dashboard'
-      preLoaderRoute: typeof DemoDashboardRouteImport
+    '/demo': {
+      id: '/demo'
+      path: '/demo'
+      fullPath: '/demo'
+      preLoaderRoute: typeof DemoRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/dashboard': {
@@ -179,7 +179,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AiRoute: AiRoute,
   DashboardRoute: DashboardRoute,
-  DemoDashboardRoute: DemoDashboardRoute,
+  DemoRoute: DemoRoute,
   OnboardingRoute: OnboardingRoute,
   ApiWaitlistRoute: ApiWaitlistRoute,
   ApiAuthSplatRoute: ApiAuthSplatRoute,

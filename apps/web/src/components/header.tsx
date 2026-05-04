@@ -2,21 +2,21 @@ import { BarChart3 } from "lucide-react";
 
 const links = [
   { href: "/#waitlist", label: "Waitlist" },
-  { href: "/demo-dashboard", label: "Demo" },
+  { href: "/demo", label: "Demo" },
   { href: "/dashboard", label: "Dashboard" },
   { href: "/ai", label: "AI" },
 ];
 
 export default function Header() {
   return (
-    <header className="border-b border-white/8 bg-[#061512]/92 px-4 py-3 text-white backdrop-blur-xl">
+    <header className="sticky top-0 z-50 border-b border-white/8 bg-[#061512]/92 px-4 py-3 text-white backdrop-blur-xl">
       <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-center gap-3 sm:justify-between">
         <a href="/" className="inline-flex items-center gap-2.5">
           <span className="flex size-8 items-center justify-center rounded-full border border-[#9cebd6]/20 bg-[#9cebd6]/10">
             <BarChart3 className="size-4 text-[#9cebd6]" />
           </span>
           <span className="font-serif text-xl leading-none tracking-normal text-white">
-            Calendar Metrics
+            Intent
           </span>
         </a>
 

@@ -10,18 +10,18 @@ export const Route = createFileRoute("/")({
 const principles = [
   {
     label: "Capture",
-    title: "Your day already has structure",
-    body: "Calendar blocks, focus sessions, and review notes become a single evidence trail instead of scattered fragments.",
+    title: "Build an evidence trail",
+    body: "Every focus session and calendar block is recorded as raw evidence. Turn scattered fragments into a single record for your accountability review.",
   },
   {
     label: "Score",
-    title: "Metrics are useful when they stay close to reality",
-    body: "Focus, energy, discipline, intent, and purpose are tracked beside the work that produced them.",
+    title: "Quantify your productivity",
+    body: "We turn subjective sessions into objective numbers. Track focus, energy, and discipline beside the work that actually produced them.",
   },
   {
     label: "Reflect",
-    title: "The goal is better planning, not prettier charts",
-    body: "You see which types of days compound, which ones drain you, and where your schedule is lying.",
+    title: "Remain accountable to reality",
+    body: "Numbers don't have an ego. See which types of days compound, which ones drain you, and exactly where your schedule is lying to you.",
   },
 ];
 
@@ -34,23 +34,23 @@ const sampleRows = [
 
 function HomeComponent() {
   return (
-    <main className="min-h-screen overflow-hidden bg-[#061512] text-white [background-image:linear-gradient(rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.035)_1px,transparent_1px)] [background-size:64px_64px]">
+    <main className="min-h-screen bg-[#061512] text-white [background-image:linear-gradient(rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.035)_1px,transparent_1px)] [background-size:64px_64px]">
       <section className="relative px-5 pb-20 pt-24 md:px-8 md:pb-28 md:pt-32">
         <div className="mx-auto max-w-7xl">
           <div className="relative z-10 mx-auto max-w-5xl text-center">
             <div className="mx-auto mb-7 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-[11px] font-semibold uppercase tracking-normal text-white/58 backdrop-blur-xl">
               <CircleDot className="size-3 text-[#9cebd6]" />
-              Calendar intelligence for intentional work
+              Numbers for accountability and productivity
             </div>
 
             <h1 className="mx-auto max-w-5xl font-serif text-[3.15rem] leading-[0.9] tracking-normal text-white sm:text-[5rem] md:text-[6.65rem]">
-              Know whether your calendar actually worked.
+              Stay accountable to the way you actually work.
             </h1>
 
             <p className="mx-auto mt-7 max-w-[43rem] text-[1.05rem] leading-8 text-white/62 md:text-[1.22rem] md:leading-9">
-              Calendar Metrics turns scheduled time and reviewed focus sessions into a living record of
-              focus, energy, discipline, and intent. It exists because most productivity tools tell you
-              what you planned. They rarely tell you what the plan cost.
+              Intent turns scheduled time and reviewed focus sessions into hard data.
+              It exists to help you remain accountable and track exactly how productive you are,
+              closing the loop between intention and reality.
             </p>
 
             <div id="waitlist" className="mx-auto mt-11 flex max-w-[35rem] justify-center">
@@ -62,10 +62,10 @@ function HomeComponent() {
 
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <a
-                href="/demo-dashboard"
+                href="/demo"
                 className="inline-flex h-11 items-center gap-2 rounded-full border border-[#9cebd6]/40 bg-[#9cebd6]/10 px-5 text-sm font-semibold text-[#c9fff0] transition-colors hover:bg-[#9cebd6]/16"
               >
-                Explore demo dashboard
+                Explore demo
                 <ArrowRight className="size-4" />
               </a>
               <a
@@ -88,13 +88,13 @@ function HomeComponent() {
               Motivation
             </p>
             <h2 className="mt-4 max-w-xl font-serif text-[2.55rem] leading-[0.95] tracking-normal text-white md:text-[3.45rem]">
-              A calendar is a decision log. We should treat it like one.
+              Accountability requires objective numbers.
             </h2>
           </div>
           <p className="max-w-2xl text-lg leading-8 text-white/58">
-            The product is not trying to gamify your day. It is trying to close the loop between
-            intention and outcome. When the same patterns keep showing up, you can stop arguing with
-            vibes and start changing the shape of your week.
+            The product is not about calendar visibility—it's about using metrics to remain accountable.
+            When you track how productive you actually are, you can stop arguing with vibes and start 
+            making decisions based on the evidence of your own output.
           </p>
         </div>
       </section>
