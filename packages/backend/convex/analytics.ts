@@ -317,3 +317,138 @@ export const getRecentActivity = query({
       .slice(0, args.limit || 10);
   },
 });
+
+const COMPOSITE_EXCLUDED = new Set(["distractions"]);
+
+export const getDailyAggregates = query({
+  args: {
+    days: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const user = await authComponent.safeGetAuthUser(ctx);
+    if (!user) return [];
+
+    const windowDays = args.days ?? 91;
+    const cutoffTime = Date.now() - windowDays * 24 * 60 * 60 * 1000;
+    const selectedCalendarId = await getSelectedCalendarId(ctx, user._id);
+    const observations = await getRelevantObservations(ctx, selectedCalendarId, { cutoffTime });
+
+    type DayBucket = {
+      metrics: Record<string, number[]>;
+      sessionIds: Set<string>;
+      anySubjectIds: Set<string>;
+    };
+
+    const byDate = new Map<string, DayBucket>();
+
+    for (const obs of observations) {
+      if (obs.valueType !== "number" || typeof obs.numberValue !== "number") continue;
+      const dateStr = new Date(obs.observedAt).toISOString().slice(0, 10);
+      if (!byDate.has(dateStr)) {
+        byDate.set(dateStr, { metrics: {}, sessionIds: new Set(), anySubjectIds: new Set() });
+      }
+      const day = byDate.get(dateStr)!;
+      if (!day.metrics[obs.key]) day.metrics[obs.key] = [];
+      day.metrics[obs.key].push(obs.numberValue);
+      day.anySubjectIds.add(`${obs.subjectType}:${obs.subjectId}`);
+      if (obs.subjectType === "intentSession") {
+        day.sessionIds.add(obs.subjectId);
+      }
+    }
+
+    const completedSessions = await ctx.db
+      .query("intentSessions")
+      .withIndex("by_status_startTimeMs", (q: any) =>
+        q.eq("status", "completed").gte("startTimeMs", cutoffTime),
+      )
+      .collect();
+
+    const sessionDurations = new Map<string, number>();
+    for (const session of completedSessions) {
+      if (session.durationMs) {
+        sessionDurations.set(String(session._id), session.durationMs);
+      }
+    }
+
+    return [...byDate.entries()]
+      .map(([dateStr, data]) => {
+        const avgMetrics: Record<string, number> = {};
+        let compositeSum = 0;
+        let compositeCount = 0;
+
+        for (const [key, values] of Object.entries(data.metrics)) {
+          const avg = values.reduce((a, b) => a + b, 0) / values.length;
+          avgMetrics[key] = Math.round(avg * 10) / 10;
+          if (!COMPOSITE_EXCLUDED.has(key)) {
+            compositeSum += avg;
+            compositeCount++;
+          }
+        }
+
+        let totalHours = 0;
+        for (const sessionId of data.sessionIds) {
+          const dur = sessionDurations.get(sessionId);
+          if (dur) totalHours += dur / 3_600_000;
+        }
+
+        return {
+          dateStr,
+          sessionCount: data.sessionIds.size,
+          anyActivity: data.anySubjectIds.size > 0,
+          totalHours: Math.round(totalHours * 10) / 10,
+          avgMetrics,
+          compositeScore:
+            compositeCount > 0 ? Math.round((compositeSum / compositeCount) * 10) / 10 : 0,
+        };
+      })
+      .sort((a, b) => a.dateStr.localeCompare(b.dateStr));
+  },
+});
+
+export const getWeeklyComparison = query({
+  args: {},
+  handler: async (ctx) => {
+    const user = await authComponent.safeGetAuthUser(ctx);
+    if (!user) return { thisWeek: {} as Record<string, number>, lastWeek: {} as Record<string, number> };
+
+    const selectedCalendarId = await getSelectedCalendarId(ctx, user._id);
+
+    const msPerDay = 86_400_000;
+    const now = Date.now();
+    const todayUtcStart = Math.floor(now / msPerDay) * msPerDay;
+    const dayOfWeek = new Date(now).getUTCDay();
+    const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    const thisMondayMs = todayUtcStart - daysToMonday * msPerDay;
+    const lastMondayMs = thisMondayMs - 7 * msPerDay;
+
+    const observations = await getRelevantObservations(ctx, selectedCalendarId, {
+      cutoffTime: lastMondayMs,
+    });
+
+    const numericObs = observations.filter(
+      (obs) => obs.valueType === "number" && typeof obs.numberValue === "number",
+    );
+
+    function avgByKey(obs: typeof numericObs): Record<string, number> {
+      const sums: Record<string, { sum: number; count: number }> = {};
+      for (const o of obs) {
+        if (!sums[o.key]) sums[o.key] = { sum: 0, count: 0 };
+        sums[o.key].sum += o.numberValue as number;
+        sums[o.key].count++;
+      }
+      return Object.fromEntries(
+        Object.entries(sums).map(([key, { sum, count }]) => [
+          key,
+          Math.round((sum / count) * 10) / 10,
+        ]),
+      );
+    }
+
+    return {
+      thisWeek: avgByKey(numericObs.filter((o) => o.observedAt >= thisMondayMs)),
+      lastWeek: avgByKey(
+        numericObs.filter((o) => o.observedAt >= lastMondayMs && o.observedAt < thisMondayMs),
+      ),
+    };
+  },
+});

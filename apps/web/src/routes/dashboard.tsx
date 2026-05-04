@@ -5,11 +5,19 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
   Area,
-  AreaChart,
   Bar,
   BarChart,
   CartesianGrid,
   Cell,
+  ComposedChart,
+  Legend,
+  Line,
+  PolarAngleAxis,
+  PolarGrid,
+  PolarRadiusAxis,
+  Radar,
+  RadarChart,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -57,6 +65,79 @@ type MetricTimeSeriesPoint = {
   subjectType: "event" | "intentSession";
 };
 
+type DailyAggregate = {
+  dateStr: string;
+  sessionCount: number;
+  anyActivity: boolean;
+  totalHours: number;
+  avgMetrics: Record<string, number>;
+  compositeScore: number;
+};
+
+type WeeklyComparison = {
+  thisWeek: Record<string, number>;
+  lastWeek: Record<string, number>;
+};
+
+const CORE_METRICS = ["focus", "discipline", "energy", "mindfulness", "intentionality", "purpose"];
+const METRIC_COLORS: Record<string, string> = {
+  focus: "#2563eb",
+  discipline: "#0f766e",
+  energy: "#ea580c",
+  mindfulness: "#7c3aed",
+  intentionality: "#be185d",
+  purpose: "#d97706",
+  distractions: "#dc2626",
+};
+
+function computeMovingAverage(points: { date: number; value: number }[], window: number) {
+  return points.map((point, i) => {
+    const slice = points.slice(Math.max(0, i - window + 1), i + 1);
+    const ma = slice.reduce((s, p) => s + p.value, 0) / slice.length;
+    return { ...point, ma7: Math.round(ma * 10) / 10 };
+  });
+}
+
+function computeStreak(dailyData: Pick<DailyAggregate, "dateStr" | "sessionCount">[]) {
+  const today = new Date().toISOString().slice(0, 10);
+  const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+  const activeDays = new Set(dailyData.filter((d) => d.sessionCount > 0).map((d) => d.dateStr));
+  let current: string | null = activeDays.has(today)
+    ? today
+    : activeDays.has(yesterday)
+      ? yesterday
+      : null;
+  let streak = 0;
+  while (current && activeDays.has(current)) {
+    streak++;
+    const date = new Date(`${current}T12:00:00Z`);
+    date.setUTCDate(date.getUTCDate() - 1);
+    current = date.toISOString().slice(0, 10);
+  }
+  return streak;
+}
+
+function compositeFromSummary(numeric: Record<string, NumericMetricStats>): number | null {
+  const values = CORE_METRICS.map((k) => numeric[k]?.avg).filter((v) => v !== undefined) as number[];
+  if (values.length === 0) return null;
+  return Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10) / 10;
+}
+
+function compositeFromWeek(week: Record<string, number>): number | null {
+  const values = CORE_METRICS.map((k) => week[k]).filter((v) => v !== undefined);
+  if (values.length === 0) return null;
+  return Math.round((values.reduce((a, b) => a + b, 0) / values.length) * 10) / 10;
+}
+
+function heatmapCellClass(data: DailyAggregate | undefined): string {
+  if (!data || (!data.sessionCount && !data.anyActivity)) return "bg-muted/30";
+  if (data.compositeScore === 0) return "bg-teal-500/20";
+  if (data.compositeScore >= 8) return "bg-teal-500";
+  if (data.compositeScore >= 6.5) return "bg-teal-500/70";
+  if (data.compositeScore >= 5) return "bg-amber-500/60";
+  return "bg-red-400/60";
+}
+
 const HERO_TONES = ["#0f766e", "#ea580c", "#2563eb", "#be185d", "#7c3aed"];
 
 export const Route = createFileRoute("/dashboard")({
@@ -90,6 +171,8 @@ function DashboardContent() {
   const userSettings = useQuery(api.userSettings.getUserSettings);
   const metricsSummary = useQuery(api.analytics.getMetricsSummary);
   const recentActivity = useQuery(api.analytics.getRecentActivity, { limit: 8 });
+  const dailyAggregates = useQuery(api.analytics.getDailyAggregates, { days: 91 }) as DailyAggregate[] | undefined;
+  const weeklyComparison = useQuery(api.analytics.getWeeklyComparison) as WeeklyComparison | undefined;
   const [selectedMetric, setSelectedMetric] = useState<string | null>(null);
   const [metricWindowDays, setMetricWindowDays] = useState(30);
 
@@ -147,6 +230,18 @@ function DashboardContent() {
     (item) => item.subjectType === "intentSession",
   ).length;
   const observationCount = numericEntries.reduce((sum, [, stats]) => sum + stats.count, 0);
+
+  const currentStreak = dailyAggregates ? computeStreak(dailyAggregates) : 0;
+  const totalHours = dailyAggregates
+    ? Math.round(dailyAggregates.reduce((s, d) => s + d.totalHours, 0) * 10) / 10
+    : 0;
+  const compositeNow = compositeFromSummary(numericMetrics);
+  const compositeThisWeek = weeklyComparison ? compositeFromWeek(weeklyComparison.thisWeek) : null;
+  const compositeLastWeek = weeklyComparison ? compositeFromWeek(weeklyComparison.lastWeek) : null;
+  const compositeDelta =
+    compositeThisWeek !== null && compositeLastWeek !== null
+      ? Math.round((compositeThisWeek - compositeLastWeek) * 10) / 10
+      : null;
 
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(13,148,136,0.16),_transparent_30%),radial-gradient(circle_at_top_right,_rgba(249,115,22,0.14),_transparent_28%),linear-gradient(180deg,_rgba(248,250,252,0.88),_rgba(248,250,252,1))] px-4 py-8 dark:bg-[radial-gradient(circle_at_top_left,_rgba(13,148,136,0.2),_transparent_28%),radial-gradient(circle_at_top_right,_rgba(234,88,12,0.16),_transparent_30%),linear-gradient(180deg,_rgba(9,12,18,0.96),_rgba(11,16,24,1))]">
@@ -210,6 +305,18 @@ function DashboardContent() {
           <EmptyState />
         ) : (
           <>
+            <CompositeStatRow
+              compositeNow={compositeNow}
+              compositeDelta={compositeDelta}
+              currentStreak={currentStreak}
+              totalHours={totalHours}
+              observationCount={observationCount}
+            />
+
+            {dailyAggregates && dailyAggregates.length > 0 && (
+              <ConsistencyHeatmap dailyAggregates={dailyAggregates} currentStreak={currentStreak} />
+            )}
+
             <section className="grid gap-6 xl:grid-cols-[0.95fr_1.35fr]">
               <MetricSelectorRail
                 metrics={numericEntries}
@@ -224,6 +331,13 @@ function DashboardContent() {
               />
             </section>
 
+            {weeklyComparison && (
+              <section className="grid gap-6 xl:grid-cols-[1fr_1fr]">
+                <RadarPanel summary={summary} weeklyComparison={weeklyComparison} />
+                <WeekOverWeekPanel weeklyComparison={weeklyComparison} />
+              </section>
+            )}
+
             <section className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
               <CategoryFieldPanel
                 metricKey={preferredCategoricalKey}
@@ -231,6 +345,10 @@ function DashboardContent() {
               />
               <RecentActivityFeed activity={(recentActivity || []) as RecentActivityItem[]} />
             </section>
+
+            {dailyAggregates && dailyAggregates.length > 0 && (
+              <SessionsPerDayChart dailyAggregates={dailyAggregates} />
+            )}
 
             <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               {numericEntries.slice(0, 4).map(([key, stats], index) => (
@@ -378,16 +496,20 @@ function MetricChartPanel({
 
             <div className="h-[320px] rounded-[24px] bg-[linear-gradient(180deg,_rgba(13,148,136,0.08),_rgba(13,148,136,0.02))] p-4">
               <ResponsiveContainer width="100%" height="100%">
-                <AreaChart
-                  data={timeSeries.map((point) => ({
+                <ComposedChart
+                  data={computeMovingAverage(
+                    timeSeries.map((point) => ({ date: point.date, value: point.value })),
+                    7,
+                  ).map((point, i) => ({
                     date: new Date(point.date).toLocaleDateString("en-US", {
                       month: "short",
                       day: "numeric",
                     }),
                     fullDate: point.date,
                     value: point.value,
-                    title: point.subjectTitle,
-                    source: point.subjectType === "intentSession" ? "Session" : "Event",
+                    ma7: point.ma7,
+                    title: timeSeries[i].subjectTitle,
+                    source: timeSeries[i].subjectType === "intentSession" ? "Session" : "Event",
                   }))}
                 >
                   <defs>
@@ -398,7 +520,8 @@ function MetricChartPanel({
                   </defs>
                   <CartesianGrid strokeDasharray="4 4" stroke="rgba(100,116,139,0.18)" />
                   <XAxis dataKey="date" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} tickLine={false} axisLine={false} />
-                  <YAxis tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} tickLine={false} axisLine={false} />
+                  <YAxis domain={[0, 10]} tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12 }} tickLine={false} axisLine={false} />
+                  <ReferenceLine y={stats.avg} stroke="rgba(148,163,184,0.35)" strokeDasharray="6 3" label={{ value: `avg ${formatScore(stats.avg)}`, fill: "rgba(148,163,184,0.7)", fontSize: 11, position: "insideTopRight" }} />
                   <Tooltip
                     cursor={{ stroke: "rgba(15,118,110,0.25)", strokeWidth: 1.5 }}
                     contentStyle={{
@@ -407,15 +530,12 @@ function MetricChartPanel({
                       borderRadius: "18px",
                       color: "white",
                     }}
-                    formatter={(value) => [value, titleForKey(metricKey)]}
+                    formatter={(value, name) => [value, name === "ma7" ? "7-pt avg" : titleForKey(metricKey)]}
                     labelFormatter={(_, payload) => {
                       const point = payload?.[0]?.payload as
                         | { title?: string; source?: string; fullDate?: number }
                         | undefined;
-                      if (!point) {
-                        return "";
-                      }
-
+                      if (!point) return "";
                       return `${point.title} · ${point.source}`;
                     }}
                   />
@@ -423,12 +543,33 @@ function MetricChartPanel({
                     type="monotone"
                     dataKey="value"
                     stroke="#0f766e"
-                    strokeWidth={3}
+                    strokeWidth={2}
                     fill="url(#metricFieldGlow)"
-                    activeDot={{ r: 6, fill: "#0f766e", stroke: "#f8fafc", strokeWidth: 2 }}
+                    activeDot={{ r: 5, fill: "#0f766e", stroke: "#f8fafc", strokeWidth: 2 }}
+                    dot={false}
                   />
-                </AreaChart>
+                  <Line
+                    type="monotone"
+                    dataKey="ma7"
+                    stroke="#ea580c"
+                    strokeWidth={2.5}
+                    dot={false}
+                    strokeDasharray="0"
+                    activeDot={{ r: 4, fill: "#ea580c", stroke: "#f8fafc", strokeWidth: 2 }}
+                  />
+                </ComposedChart>
               </ResponsiveContainer>
+            </div>
+
+            <div className="flex items-center gap-4 px-1 text-xs text-muted-foreground">
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block h-2.5 w-5 rounded-sm bg-teal-600/70" />
+                Raw values
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="inline-block h-0.5 w-5 bg-orange-500" />
+                7-point moving avg
+              </span>
             </div>
           </div>
         )}
@@ -638,6 +779,495 @@ function RecentActivityFeed({ activity }: { activity: RecentActivityItem[] }) {
             ))}
           </div>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function CompositeStatRow({
+  compositeNow,
+  compositeDelta,
+  currentStreak,
+  totalHours,
+  observationCount,
+}: {
+  compositeNow: number | null;
+  compositeDelta: number | null;
+  currentStreak: number;
+  totalHours: number;
+  observationCount: number;
+}) {
+  const deltaColor =
+    compositeDelta === null ? "text-muted-foreground" : compositeDelta > 0 ? "text-teal-400" : compositeDelta < 0 ? "text-red-400" : "text-muted-foreground";
+  const deltaLabel =
+    compositeDelta === null
+      ? "no prior week data"
+      : `${compositeDelta > 0 ? "+" : ""}${formatScore(compositeDelta)} vs last week`;
+
+  return (
+    <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="rounded-[26px] border border-border/60 bg-card/80 p-5 shadow-[0_18px_50px_-40px_rgba(15,23,42,0.65)] backdrop-blur">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-muted-foreground">Composite Score</p>
+        <p className="mt-3 font-serif text-4xl font-semibold" style={{ color: "#0f766e" }}>
+          {compositeNow !== null ? formatScore(compositeNow) : "—"}
+        </p>
+        <p className={cn("mt-1 text-sm font-medium", deltaColor)}>{deltaLabel}</p>
+        <p className="mt-1 text-xs text-muted-foreground">avg of 6 core metrics</p>
+      </div>
+
+      <div className="rounded-[26px] border border-border/60 bg-card/80 p-5 shadow-[0_18px_50px_-40px_rgba(15,23,42,0.65)] backdrop-blur">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-muted-foreground">Current Streak</p>
+        <p className="mt-3 font-serif text-4xl font-semibold" style={{ color: currentStreak >= 7 ? "#0f766e" : currentStreak >= 3 ? "#d97706" : "#6b7280" }}>
+          {currentStreak}
+        </p>
+        <p className="mt-1 text-sm text-muted-foreground">
+          {currentStreak === 0
+            ? "No active streak — log a session!"
+            : currentStreak === 1
+              ? "day in a row"
+              : `days in a row`}
+        </p>
+        <div className="mt-2 flex gap-1">
+          {Array.from({ length: 7 }).map((_, i) => (
+            <div
+              key={i}
+              className={cn("h-1.5 flex-1 rounded-full", i < Math.min(currentStreak, 7) ? "bg-teal-500" : "bg-muted/60")}
+            />
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-[26px] border border-border/60 bg-card/80 p-5 shadow-[0_18px_50px_-40px_rgba(15,23,42,0.65)] backdrop-blur">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-muted-foreground">Hours Tracked</p>
+        <p className="mt-3 font-serif text-4xl font-semibold" style={{ color: "#ea580c" }}>
+          {totalHours > 0 ? `${totalHours}h` : "—"}
+        </p>
+        <p className="mt-1 text-sm text-muted-foreground">across all reviewed sessions</p>
+        <p className="mt-1 text-xs text-muted-foreground">last 91 days</p>
+      </div>
+
+      <div className="rounded-[26px] border border-border/60 bg-card/80 p-5 shadow-[0_18px_50px_-40px_rgba(15,23,42,0.65)] backdrop-blur">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.25em] text-muted-foreground">Total Observations</p>
+        <p className="mt-3 font-serif text-4xl font-semibold" style={{ color: "#7c3aed" }}>
+          {observationCount}
+        </p>
+        <p className="mt-1 text-sm text-muted-foreground">data points collected</p>
+        <p className="mt-1 text-xs text-muted-foreground">always growing</p>
+      </div>
+    </section>
+  );
+}
+
+function ConsistencyHeatmap({
+  dailyAggregates,
+  currentStreak,
+}: {
+  dailyAggregates: DailyAggregate[];
+  currentStreak: number;
+}) {
+  const dataMap = new Map(dailyAggregates.map((d) => [d.dateStr, d]));
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  // Start 12 weeks (84 days) back, snapped to Monday
+  const startDate = new Date(today);
+  startDate.setDate(today.getDate() - 84);
+  const startDow = startDate.getDay();
+  const daysBackToMonday = startDow === 0 ? 6 : startDow - 1;
+  startDate.setDate(startDate.getDate() - daysBackToMonday);
+
+  const cells: { date: Date; dateStr: string; data: DailyAggregate | undefined }[] = [];
+  const cur = new Date(startDate);
+  while (cur <= today) {
+    const dateStr = cur.toISOString().slice(0, 10);
+    cells.push({ date: new Date(cur), dateStr, data: dataMap.get(dateStr) });
+    cur.setDate(cur.getDate() + 1);
+  }
+
+  // Pad to full weeks
+  while (cells.length % 7 !== 0) {
+    const next = new Date(cells[cells.length - 1].date);
+    next.setDate(next.getDate() + 1);
+    cells.push({ date: next, dateStr: next.toISOString().slice(0, 10), data: undefined });
+  }
+
+  const weeks: typeof cells[] = [];
+  for (let i = 0; i < cells.length; i += 7) {
+    weeks.push(cells.slice(i, i + 7));
+  }
+
+  const totalSessions = dailyAggregates.reduce((s, d) => s + d.sessionCount, 0);
+  const activeDays = dailyAggregates.filter((d) => d.sessionCount > 0).length;
+
+  const MONTH_LABELS: string[] = [];
+  let lastMonth = -1;
+  for (const week of weeks) {
+    const mon = week[0].date.getUTCMonth();
+    if (mon !== lastMonth) {
+      MONTH_LABELS.push(week[0].date.toLocaleDateString("en-US", { month: "short" }));
+      lastMonth = mon;
+    } else {
+      MONTH_LABELS.push("");
+    }
+  }
+
+  return (
+    <Card className="rounded-[28px] border border-border/60 bg-card/85 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.55)] backdrop-blur">
+      <CardHeader className="border-b border-border/60 pb-5">
+        <CardDescription className="uppercase tracking-[0.22em]">Consistency Calendar</CardDescription>
+        <CardTitle className="font-serif text-2xl">
+          {currentStreak > 0 ? `${currentStreak}-day streak — keep it going!` : "Build your streak"}
+        </CardTitle>
+        <CardDescription>
+          {activeDays} active days · {totalSessions} sessions reviewed · darker = higher composite score
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="overflow-x-auto pb-5 pt-5">
+        <div className="inline-flex flex-col gap-1">
+          <div className="flex gap-1 pl-7">
+            {MONTH_LABELS.map((label, i) => (
+              <div key={i} className="w-[18px] text-[10px] text-muted-foreground">{label}</div>
+            ))}
+          </div>
+          <div className="flex gap-1">
+            <div className="flex flex-col justify-around gap-1 pr-2">
+              {["M", "T", "W", "T", "F", "S", "S"].map((d, i) => (
+                <div key={i} className="flex h-[18px] items-center text-[10px] text-muted-foreground">{d}</div>
+              ))}
+            </div>
+            {weeks.map((week, wi) => (
+              <div key={wi} className="flex flex-col gap-1">
+                {week.map((cell) => {
+                  const isFuture = cell.date > today;
+                  return (
+                    <div
+                      key={cell.dateStr}
+                      className={cn(
+                        "h-[18px] w-[18px] rounded-[3px] transition-all",
+                        isFuture ? "bg-transparent" : heatmapCellClass(cell.data),
+                      )}
+                      title={
+                        isFuture
+                          ? ""
+                          : cell.data
+                            ? `${cell.dateStr}: ${cell.data.sessionCount} session${cell.data.sessionCount !== 1 ? "s" : ""}, score ${cell.data.compositeScore}`
+                            : `${cell.dateStr}: no sessions`
+                      }
+                    />
+                  );
+                })}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-4 flex items-center gap-3">
+          <span className="text-[11px] text-muted-foreground">Less</span>
+          {["bg-muted/30", "bg-red-400/60", "bg-amber-500/60", "bg-teal-500/70", "bg-teal-500"].map((cls, i) => (
+            <div key={i} className={cn("h-[14px] w-[14px] rounded-[2px]", cls)} />
+          ))}
+          <span className="text-[11px] text-muted-foreground">More</span>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function RadarPanel({
+  summary,
+  weeklyComparison,
+}: {
+  summary: DashboardMetricsSummary;
+  weeklyComparison: WeeklyComparison;
+}) {
+  const radarData = CORE_METRICS.filter(
+    (key) => summary.numeric[key] || weeklyComparison.thisWeek[key] || weeklyComparison.lastWeek[key],
+  ).map((key) => ({
+    metric: titleForKey(key),
+    thisWeek: Math.round((weeklyComparison.thisWeek[key] ?? 0) * 10) / 10,
+    lastWeek: Math.round((weeklyComparison.lastWeek[key] ?? 0) * 10) / 10,
+    allTime: Math.round((summary.numeric[key]?.avg ?? 0) * 10) / 10,
+  }));
+
+  const hasThisWeek = Object.keys(weeklyComparison.thisWeek).length > 0;
+  const hasLastWeek = Object.keys(weeklyComparison.lastWeek).length > 0;
+
+  return (
+    <Card className="rounded-[28px] border border-border/60 bg-card/85 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.55)] backdrop-blur">
+      <CardHeader className="border-b border-border/60 pb-5">
+        <CardDescription className="uppercase tracking-[0.22em]">Metric Radar</CardDescription>
+        <CardTitle className="font-serif text-2xl">All metrics at a glance</CardTitle>
+        <CardDescription>
+          {hasLastWeek ? "This week (teal) vs last week (orange)" : "Your metric profile across all tracked time"}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="pb-5 pt-5">
+        {radarData.length === 0 ? (
+          <div className="flex h-[340px] items-center justify-center text-muted-foreground">
+            Not enough data for radar view yet.
+          </div>
+        ) : (
+          <div className="h-[340px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <RadarChart data={radarData} margin={{ top: 10, right: 30, bottom: 10, left: 30 }}>
+                <PolarGrid stroke="rgba(100,116,139,0.2)" />
+                <PolarAngleAxis
+                  dataKey="metric"
+                  tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 12, fontWeight: 500 }}
+                />
+                <PolarRadiusAxis
+                  domain={[0, 10]}
+                  tick={{ fill: "rgba(100,116,139,0.5)", fontSize: 10 }}
+                  axisLine={false}
+                  tickCount={3}
+                />
+                {hasLastWeek && (
+                  <Radar
+                    name="Last Week"
+                    dataKey="lastWeek"
+                    stroke="#ea580c"
+                    fill="#ea580c"
+                    fillOpacity={0.1}
+                    strokeWidth={1.5}
+                    strokeDasharray="4 3"
+                  />
+                )}
+                <Radar
+                  name={hasThisWeek ? "This Week" : "All Time"}
+                  dataKey={hasThisWeek ? "thisWeek" : "allTime"}
+                  stroke="#0f766e"
+                  fill="#0f766e"
+                  fillOpacity={0.25}
+                  strokeWidth={2.5}
+                />
+                <Legend
+                  wrapperStyle={{ fontSize: "12px", paddingTop: "8px" }}
+                  iconType="circle"
+                  iconSize={8}
+                />
+                <Tooltip
+                  contentStyle={{
+                    background: "rgba(15,23,42,0.96)",
+                    border: "1px solid rgba(148,163,184,0.18)",
+                    borderRadius: "14px",
+                    color: "white",
+                    fontSize: "13px",
+                  }}
+                />
+              </RadarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function WeekOverWeekPanel({ weeklyComparison }: { weeklyComparison: WeeklyComparison }) {
+  const { thisWeek, lastWeek } = weeklyComparison;
+  const allKeys = [...new Set([...Object.keys(thisWeek), ...Object.keys(lastWeek)])].sort();
+
+  const barData = allKeys.map((key) => ({
+    metric: titleForKey(key).slice(0, 10),
+    fullName: titleForKey(key),
+    thisWeek: thisWeek[key] ?? 0,
+    lastWeek: lastWeek[key] ?? 0,
+  }));
+
+  const deltaCards = allKeys.map((key) => {
+    const curr = thisWeek[key] ?? null;
+    const prev = lastWeek[key] ?? null;
+    const delta = curr !== null && prev !== null ? Math.round((curr - prev) * 10) / 10 : null;
+    return { key, curr, prev, delta };
+  });
+
+  const hasThisWeek = Object.keys(thisWeek).length > 0;
+
+  return (
+    <Card className="rounded-[28px] border border-border/60 bg-card/85 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.55)] backdrop-blur">
+      <CardHeader className="border-b border-border/60 pb-5">
+        <CardDescription className="uppercase tracking-[0.22em]">Week Over Week</CardDescription>
+        <CardTitle className="font-serif text-2xl">
+          {hasThisWeek ? "Are you improving?" : "No data this week yet"}
+        </CardTitle>
+        <CardDescription>
+          {hasThisWeek
+            ? "Current week average vs previous week. Green = improving."
+            : "Log sessions this week to see your progress vs last week."}
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4 pb-5 pt-5">
+        {!hasThisWeek ? (
+          <div className="flex h-[300px] items-center justify-center text-muted-foreground">
+            Keep logging — your trend will appear here.
+          </div>
+        ) : (
+          <>
+            <div className="h-[180px] rounded-[20px] bg-[linear-gradient(180deg,_rgba(13,148,136,0.06),_rgba(13,148,136,0.01))] p-3">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={barData} barGap={2} barCategoryGap="25%">
+                  <CartesianGrid strokeDasharray="4 4" stroke="rgba(100,116,139,0.12)" vertical={false} />
+                  <XAxis dataKey="metric" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }} tickLine={false} axisLine={false} />
+                  <YAxis domain={[0, 10]} tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }} tickLine={false} axisLine={false} width={22} />
+                  <Tooltip
+                    contentStyle={{
+                      background: "rgba(15,23,42,0.96)",
+                      border: "1px solid rgba(148,163,184,0.18)",
+                      borderRadius: "14px",
+                      color: "white",
+                      fontSize: "12px",
+                    }}
+                    formatter={(value, name) => [value, name === "thisWeek" ? "This week" : "Last week"]}
+                    labelFormatter={(_, payload) => payload?.[0]?.payload?.fullName ?? ""}
+                  />
+                  <Bar dataKey="lastWeek" fill="#ea580c" fillOpacity={0.4} radius={[4, 4, 0, 0]} name="lastWeek" />
+                  <Bar dataKey="thisWeek" fill="#0f766e" fillOpacity={0.85} radius={[4, 4, 0, 0]} name="thisWeek" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {deltaCards.map(({ key, curr, prev, delta }) => {
+                const isPositive = delta !== null && delta > 0;
+                const isNegative = delta !== null && delta < 0;
+                const metricColor = METRIC_COLORS[key] ?? "#6b7280";
+                return (
+                  <div
+                    key={key}
+                    className="rounded-[18px] border border-border/60 bg-background/70 p-3"
+                  >
+                    <div className="flex items-center justify-between">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+                        {titleForKey(key).slice(0, 12)}
+                      </p>
+                      {delta !== null && (
+                        <span
+                          className={cn(
+                            "text-xs font-bold",
+                            isPositive ? "text-teal-500" : isNegative ? "text-red-400" : "text-muted-foreground",
+                          )}
+                        >
+                          {isPositive ? "+" : ""}{formatScore(delta)}
+                        </span>
+                      )}
+                    </div>
+                    <div className="mt-2 flex items-baseline gap-1">
+                      {prev !== null && (
+                        <span className="text-xs text-muted-foreground line-through">{formatScore(prev)}</span>
+                      )}
+                      <span className="text-lg font-semibold" style={{ color: metricColor }}>
+                        {curr !== null ? formatScore(curr) : "—"}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function SessionsPerDayChart({ dailyAggregates }: { dailyAggregates: DailyAggregate[] }) {
+  const recent = [...dailyAggregates].slice(-30);
+
+  const data = recent.map((d) => ({
+    date: new Date(d.dateStr + "T12:00:00Z").toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+    }),
+    fullDate: d.dateStr,
+    sessions: d.sessionCount,
+    score: d.compositeScore,
+    hours: d.totalHours,
+  }));
+
+  const maxSessions = Math.max(...data.map((d) => d.sessions), 1);
+
+  return (
+    <Card className="rounded-[28px] border border-border/60 bg-card/85 shadow-[0_20px_60px_-40px_rgba(15,23,42,0.55)] backdrop-blur">
+      <CardHeader className="border-b border-border/60 pb-5">
+        <CardDescription className="uppercase tracking-[0.22em]">Logging Momentum</CardDescription>
+        <CardTitle className="font-serif text-2xl">Sessions logged per day</CardTitle>
+        <CardDescription>
+          Every gap is a day you can reclaim. Color intensity shows your composite score that day.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="pb-5 pt-5">
+        <div className="h-[220px] rounded-[24px] bg-[linear-gradient(180deg,_rgba(37,99,235,0.06),_rgba(37,99,235,0.01))] p-4">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={data} barCategoryGap="20%">
+              <CartesianGrid strokeDasharray="4 4" stroke="rgba(100,116,139,0.15)" vertical={false} />
+              <XAxis
+                dataKey="date"
+                tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
+                tickLine={false}
+                axisLine={false}
+                interval={Math.ceil(data.length / 10)}
+              />
+              <YAxis
+                allowDecimals={false}
+                domain={[0, maxSessions + 1]}
+                tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 11 }}
+                tickLine={false}
+                axisLine={false}
+                width={24}
+              />
+              <Tooltip
+                cursor={{ fill: "rgba(37,99,235,0.06)" }}
+                contentStyle={{
+                  background: "rgba(15,23,42,0.96)",
+                  border: "1px solid rgba(148,163,184,0.18)",
+                  borderRadius: "14px",
+                  color: "white",
+                  fontSize: "12px",
+                }}
+                formatter={(value, name) =>
+                  name === "sessions"
+                    ? [`${value} session${Number(value) !== 1 ? "s" : ""}`, "Logged"]
+                    : [value, "Composite score"]
+                }
+                labelFormatter={(_, payload) => payload?.[0]?.payload?.fullDate ?? ""}
+              />
+              <Bar dataKey="sessions" radius={[5, 5, 0, 0]}>
+                {data.map((entry, index) => {
+                  const score = entry.score;
+                  const color =
+                    entry.sessions === 0
+                      ? "rgba(100,116,139,0.12)"
+                      : score >= 8
+                        ? "#0f766e"
+                        : score >= 6.5
+                          ? "#14b8a6"
+                          : score >= 5
+                            ? "#d97706"
+                            : score > 0
+                              ? "#f87171"
+                              : "#0f766e";
+                  return <Cell key={index} fill={color} />;
+                })}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+
+        <div className="mt-4 flex flex-wrap items-center gap-4 text-[11px] text-muted-foreground">
+          {[
+            { color: "#0f766e", label: "Score 8+" },
+            { color: "#14b8a6", label: "Score 6.5+" },
+            { color: "#d97706", label: "Score 5+" },
+            { color: "#f87171", label: "Score < 5" },
+            { color: "rgba(100,116,139,0.25)", label: "No sessions" },
+          ].map(({ color, label }) => (
+            <span key={label} className="flex items-center gap-1.5">
+              <span className="inline-block h-3 w-3 rounded-[2px]" style={{ backgroundColor: color }} />
+              {label}
+            </span>
+          ))}
+        </div>
       </CardContent>
     </Card>
   );
