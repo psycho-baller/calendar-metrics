@@ -5,6 +5,7 @@ import { useThemeColor } from "heroui-native";
 export default function TabLayout() {
   const themeColorForeground = useThemeColor("foreground");
   const themeColorBackground = useThemeColor("background");
+  const themeColorPrimary = useThemeColor("primary");
 
   return (
     <Tabs
@@ -21,6 +22,7 @@ export default function TabLayout() {
         tabBarStyle: {
           backgroundColor: themeColorBackground,
         },
+        tabBarActiveTintColor: themeColorPrimary,
       }}
     >
       <Tabs.Screen

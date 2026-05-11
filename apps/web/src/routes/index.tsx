@@ -121,7 +121,7 @@ function HomeComponent() {
       </section>
 
       <section className="px-5 pb-20 md:px-8 md:pb-24">
-        <div className="mx-auto max-w-7xl rounded-lg border border-[#9cebd6]/16 bg-[linear-gradient(135deg,_rgba(20,184,166,0.13),_rgba(255,255,255,0.03))] p-6 text-center shadow-[0_30px_120px_-75px_rgba(156,235,214,0.65)] backdrop-blur-xl md:p-10">
+        <div className="mx-auto max-w-7xl rounded-lg border border-[#9cebd6]/16 bg-[linear-gradient(135deg,_rgba(156,235,214,0.13),_rgba(255,255,255,0.03))] p-6 text-center shadow-[0_30px_120px_-75px_rgba(156,235,214,0.65)] backdrop-blur-xl md:p-10">
           <p className="mx-auto inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-normal text-[#9cebd6]">
             <Sparkles className="size-3.5" />
             Early access

@@ -10,6 +10,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 function DrawerLayout() {
   const themeColorForeground = useThemeColor("foreground");
   const themeColorBackground = useThemeColor("background");
+  const themeColorPrimary = useThemeColor("primary");
 
   const renderThemeToggle = useCallback(() => <ThemeToggle />, []);
 
@@ -24,6 +25,7 @@ function DrawerLayout() {
         },
         headerRight: renderThemeToggle,
         drawerStyle: { backgroundColor: themeColorBackground },
+        drawerActiveTintColor: themeColorPrimary,
       }}
     >
       <Drawer.Screen
