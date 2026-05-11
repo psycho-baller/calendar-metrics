@@ -8,7 +8,9 @@ import {
   bootstrap,
   deviceDashboard,
   deviceDailyReport,
+  deviceIntentionality,
   deviceMetrics,
+  recordHourlyIntentionality,
   health,
   pullDevice,
   pollDevice,
@@ -48,6 +50,18 @@ http.route({
   path: "/intent/device/daily-report",
   method: "POST",
   handler: deviceDailyReport,
+});
+
+http.route({
+  path: "/intent/device/intentionality",
+  method: "POST",
+  handler: deviceIntentionality,
+});
+
+http.route({
+  path: "/intent/device/intentionality/record",
+  method: "POST",
+  handler: recordHourlyIntentionality,
 });
 
 http.route({

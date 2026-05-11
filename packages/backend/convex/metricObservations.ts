@@ -9,6 +9,13 @@ type StructuredReviewMetrics = {
   taskCategory?: string;
 };
 
+type IntentionalityObservationInput = {
+  hourStartMs: number;
+  score: number;
+  source: string;
+  sourceDeviceName?: string;
+};
+
 function now() {
   return Date.now();
 }
@@ -191,4 +198,60 @@ export async function replaceMetricObservationsForIntentSession(
     session._id,
     sessionObservationEntries(session, review),
   );
+}
+
+export async function upsertHourlyIntentionalityObservation(
+  ctx: any,
+  input: IntentionalityObservationInput,
+) {
+  const timestamp = now();
+  const subjectType = "intentionalityHour";
+  const subjectId = `intentionality:${input.hourStartMs}`;
+  const subjectTitle = input.sourceDeviceName
+    ? `Intentionality hour from ${input.sourceDeviceName}`
+    : "Intentionality hour";
+
+  const existing = await ctx.db
+    .query("metricObservations")
+    .withIndex("by_subjectType_subjectId", (q: any) =>
+      q.eq("subjectType", subjectType).eq("subjectId", subjectId),
+    )
+    .collect();
+  const scoreObservation = existing.find(
+    (observation: Doc<"metricObservations">) =>
+      observation.key === "intentionality",
+  );
+
+  for (const observation of existing) {
+    if (observation._id !== scoreObservation?._id) {
+      await ctx.db.delete(observation._id);
+    }
+  }
+
+  const valuePatch = {
+    ...valueFields(input.score),
+    subjectTitle,
+    observedAt: input.hourStartMs,
+    source: input.source,
+    updatedAt: timestamp,
+  };
+
+  if (scoreObservation) {
+    await ctx.db.patch(scoreObservation._id, valuePatch);
+    return await ctx.db.get(scoreObservation._id);
+  }
+
+  const observationId = await ctx.db.insert("metricObservations", {
+    subjectType,
+    subjectId,
+    eventId: undefined,
+    sessionId: undefined,
+    calendarId: undefined,
+    workspaceId: undefined,
+    key: "intentionality",
+    ...valuePatch,
+    createdAt: timestamp,
+  });
+
+  return await ctx.db.get(observationId);
 }

@@ -26,6 +26,19 @@ type DeviceDailyReportBody = DeviceAuthBody & {
   endTimeMs?: number;
 };
 
+type DeviceIntentionalityBody = DeviceAuthBody & {
+  windowDays?: number;
+  timeZoneOffsetMinutes?: number;
+};
+
+type HourlyIntentionalityBody = Partial<DeviceAuthBody> & {
+  shortcutKey?: string;
+  score?: number | string;
+  observedAt?: number | string;
+  sourceDeviceName?: string;
+  platform?: string;
+};
+
 type ReviewBody = DeviceAuthBody & {
   sessionId?: string;
   numericMetrics?: Record<string, number>;
@@ -411,6 +424,69 @@ async function authenticateDevice(ctx: any, body: DeviceAuthBody) {
   });
 }
 
+function acceptedShortcutKeys() {
+  return [process.env.INTENT_SHORTCUT_KEY, process.env.INTENT_SETUP_KEY].filter(
+    (value): value is string => typeof value === "string" && value.length > 0,
+  );
+}
+
+function hasValidShortcutKey(body: HourlyIntentionalityBody | null) {
+  if (!body?.shortcutKey) {
+    return false;
+  }
+
+  return acceptedShortcutKeys().some((key) => simpleCompare(body.shortcutKey!, key));
+}
+
+function readNumberishBodyValue(value: number | string | undefined) {
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : undefined;
+  }
+
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return undefined;
+  }
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function readTimestampBodyValue(value: number | string | undefined) {
+  const numeric = readNumberishBodyValue(value);
+  if (typeof numeric === "number") {
+    return numeric;
+  }
+
+  if (typeof value !== "string" || value.trim().length === 0) {
+    return undefined;
+  }
+
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+async function authenticateIntentionalityWrite(
+  ctx: any,
+  body: HourlyIntentionalityBody | null,
+) {
+  const device = body ? await authenticateDevice(ctx, body as DeviceAuthBody) : null;
+  if (device) {
+    return {
+      source: body?.platform ? `intentionality_${body.platform}` : "intentionality_device",
+      sourceDeviceName: device.name as string,
+    };
+  }
+
+  if (hasValidShortcutKey(body)) {
+    return {
+      source: body?.platform ? `shortcut_${body.platform}` : "shortcut",
+      sourceDeviceName: body?.sourceDeviceName?.trim() || undefined,
+    };
+  }
+
+  return null;
+}
+
 async function fetchTogglTimeEntry(
   _workspaceId: number,
   timeEntryId: number,
@@ -739,6 +815,76 @@ export const deviceDailyReport = httpAction(async (ctx, request) => {
         error instanceof Error
           ? error.message
           : "Failed to load the daily report context.",
+    });
+  }
+});
+
+export const deviceIntentionality = httpAction(async (ctx, request) => {
+  try {
+    const { body } = await readJson<DeviceIntentionalityBody>(request);
+    const device = await authenticateDevice(ctx, body ?? {});
+    if (!device) {
+      return json(401, { error: "Invalid device credentials." });
+    }
+
+    const state = await ctx.runQuery(internal.intent.getDeviceIntentionalityState, {
+      windowDays: body?.windowDays,
+      timeZoneOffsetMinutes: body?.timeZoneOffsetMinutes,
+    });
+
+    return json(200, {
+      ok: true,
+      state,
+    });
+  } catch (error) {
+    return json(500, {
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to load intentionality metrics.",
+    });
+  }
+});
+
+export const recordHourlyIntentionality = httpAction(async (ctx, request) => {
+  try {
+    const { body } = await readJson<HourlyIntentionalityBody>(request);
+    const auth = await authenticateIntentionalityWrite(ctx, body);
+    const score = readNumberishBodyValue(body?.score);
+    const observedAt = readTimestampBodyValue(body?.observedAt);
+
+    if (!auth) {
+      return json(401, {
+        error:
+          "Invalid credentials. Send deviceId/deviceSecret or shortcutKey.",
+      });
+    }
+
+    if (typeof score !== "number") {
+      return json(400, { error: "score is required and must be a number." });
+    }
+
+    if (score < 0 || score > 10) {
+      return json(400, { error: "score must be between 0 and 10." });
+    }
+
+    const result = await ctx.runMutation(
+      internal.intent.recordHourlyIntentionality,
+      {
+        score,
+        observedAt,
+        source: auth.source,
+        sourceDeviceName: auth.sourceDeviceName,
+      },
+    );
+
+    return json(200, result);
+  } catch (error) {
+    return json(500, {
+      error:
+        error instanceof Error
+          ? error.message
+          : "Failed to record intentionality.",
     });
   }
 });

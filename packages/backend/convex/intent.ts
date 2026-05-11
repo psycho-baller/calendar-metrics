@@ -10,6 +10,7 @@ import {
 import {
   replaceMetricObservationsForEvent,
   replaceMetricObservationsForIntentSession,
+  upsertHourlyIntentionalityObservation,
 } from "./metricObservations";
 
 const DEFAULT_INTEGRATION_SLUG = "default";
@@ -17,6 +18,14 @@ const DEFAULT_METRICS_WINDOW_DAYS = 21;
 const MIN_METRICS_WINDOW_DAYS = 7;
 const MAX_METRICS_WINDOW_DAYS = 90;
 const DEVICE_HEARTBEAT_INTERVAL_MS = 5 * 60 * 1000;
+const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
+const INTENTIONALITY_SUBJECT_TYPE = "intentionalityHour";
+const INTENTIONALITY_KEY = "intentionality";
+const DEFAULT_INTENTIONALITY_WINDOW_DAYS = 30;
+const MIN_INTENTIONALITY_WINDOW_DAYS = 1;
+const MAX_INTENTIONALITY_WINDOW_DAYS = 180;
+const convexNumber = v.union(v.number(), v.int64());
 const INTENT_COUNT_METRIC_KEYS = new Set(["distractions"]);
 const INTENT_SIGNAL_ORDER = [
   "focus",
@@ -57,6 +66,8 @@ type DeviceSettings = {
   completeShortcutName?: string;
   bundleId?: string;
 };
+
+type ConvexNumberArg = number | bigint;
 
 type TogglTimeEntry = {
   id: number;
@@ -287,6 +298,303 @@ function computeDayStreak(dayKeys: string[]) {
 function startOfUTCDay(timestamp: number) {
   const date = new Date(timestamp);
   return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate());
+}
+
+function toFiniteNumber(value?: ConvexNumberArg) {
+  if (typeof value === "bigint") {
+    return Number(value);
+  }
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+  return value;
+}
+
+function clampIntentionalityWindowDays(value?: ConvexNumberArg) {
+  const numberValue = toFiniteNumber(value);
+  if (numberValue === undefined) {
+    return DEFAULT_INTENTIONALITY_WINDOW_DAYS;
+  }
+
+  return Math.min(
+    MAX_INTENTIONALITY_WINDOW_DAYS,
+    Math.max(MIN_INTENTIONALITY_WINDOW_DAYS, Math.round(numberValue)),
+  );
+}
+
+function clampIntentionalityScore(value: ConvexNumberArg) {
+  const numberValue = toFiniteNumber(value);
+  if (numberValue === undefined) {
+    throw new Error("Intentionality score must be a finite number.");
+  }
+
+  return roundMetric(Math.min(10, Math.max(0, numberValue)));
+}
+
+function normalizedObservedAt(value?: ConvexNumberArg) {
+  const numberValue = toFiniteNumber(value);
+  if (numberValue === undefined) {
+    return now();
+  }
+
+  return Math.max(0, Math.round(numberValue));
+}
+
+function hourStart(timestamp: number) {
+  return Math.floor(timestamp / HOUR_MS) * HOUR_MS;
+}
+
+function normalizedTimeZoneOffsetMinutes(value?: ConvexNumberArg) {
+  const numberValue = toFiniteNumber(value);
+  if (numberValue === undefined) {
+    return 0;
+  }
+
+  return Math.min(14 * 60, Math.max(-14 * 60, Math.round(numberValue)));
+}
+
+function localDateParts(timestamp: number, timeZoneOffsetMinutes: number) {
+  const date = new Date(timestamp + timeZoneOffsetMinutes * 60 * 1000);
+  return {
+    year: date.getUTCFullYear(),
+    month: date.getUTCMonth() + 1,
+    day: date.getUTCDate(),
+    hour: date.getUTCHours(),
+  };
+}
+
+function localDayKey(timestamp: number, timeZoneOffsetMinutes: number) {
+  const parts = localDateParts(timestamp, timeZoneOffsetMinutes);
+  return [
+    parts.year,
+    String(parts.month).padStart(2, "0"),
+    String(parts.day).padStart(2, "0"),
+  ].join("-");
+}
+
+function localDayStartMs(timestamp: number, timeZoneOffsetMinutes: number) {
+  const parts = localDateParts(timestamp, timeZoneOffsetMinutes);
+  return (
+    Date.UTC(parts.year, parts.month - 1, parts.day) -
+    timeZoneOffsetMinutes * 60 * 1000
+  );
+}
+
+function hourLabel(hour: number) {
+  if (hour === 0) {
+    return "12 AM";
+  }
+  if (hour < 12) {
+    return `${hour} AM`;
+  }
+  if (hour === 12) {
+    return "12 PM";
+  }
+  return `${hour - 12} PM`;
+}
+
+function computeLocalDayStreak(
+  dayKeys: string[],
+  timestamp: number,
+  timeZoneOffsetMinutes: number,
+) {
+  const daySet = new Set(dayKeys);
+  let cursor = localDayStartMs(timestamp, timeZoneOffsetMinutes);
+  let streak = 0;
+
+  while (daySet.has(localDayKey(cursor, timeZoneOffsetMinutes))) {
+    streak += 1;
+    cursor -= DAY_MS;
+  }
+
+  return streak;
+}
+
+function intentionalityObservationToEntry(
+  observation: Doc<"metricObservations">,
+  timeZoneOffsetMinutes: number,
+) {
+  const parts = localDateParts(observation.observedAt, timeZoneOffsetMinutes);
+  return {
+    id: observation._id,
+    hourStartMs: observation.observedAt,
+    score: observation.numberValue ?? 0,
+    dayKey: localDayKey(observation.observedAt, timeZoneOffsetMinutes),
+    hour: parts.hour,
+    hourLabel: hourLabel(parts.hour),
+    source: observation.source,
+    updatedAt: observation.updatedAt,
+  };
+}
+
+type IntentionalityEntry = ReturnType<typeof intentionalityObservationToEntry>;
+
+async function buildIntentionalitySnapshot(
+  ctx: any,
+  options?: {
+    windowDays?: ConvexNumberArg;
+    timeZoneOffsetMinutes?: ConvexNumberArg;
+  },
+) {
+  const timestamp = now();
+  const windowDays = clampIntentionalityWindowDays(options?.windowDays);
+  const timeZoneOffsetMinutes = normalizedTimeZoneOffsetMinutes(
+    options?.timeZoneOffsetMinutes,
+  );
+  const cutoffTime = timestamp - windowDays * DAY_MS;
+
+  const observations = (
+    await ctx.db
+      .query("metricObservations")
+      .withIndex("by_subjectType_key_observedAt", (q: any) =>
+        q
+          .eq("subjectType", INTENTIONALITY_SUBJECT_TYPE)
+          .eq("key", INTENTIONALITY_KEY)
+          .gte("observedAt", cutoffTime),
+      )
+      .collect()
+  ) as Doc<"metricObservations">[];
+
+  const numericObservations = observations
+    .filter(
+      (observation: Doc<"metricObservations">) =>
+        observation.valueType === "number" &&
+        typeof observation.numberValue === "number",
+    )
+    .sort(
+      (left: Doc<"metricObservations">, right: Doc<"metricObservations">) =>
+        left.observedAt - right.observedAt,
+    );
+
+  const entries: IntentionalityEntry[] = numericObservations.map(
+    (observation: Doc<"metricObservations">) =>
+      intentionalityObservationToEntry(observation, timeZoneOffsetMinutes),
+  );
+  const scores = entries.map((entry) => entry.score);
+  const todayKey = localDayKey(timestamp, timeZoneOffsetMinutes);
+  const yesterdayKey = localDayKey(timestamp - DAY_MS, timeZoneOffsetMinutes);
+  const todayScores = entries
+    .filter((entry) => entry.dayKey === todayKey)
+    .map((entry) => entry.score);
+  const yesterdayScores = entries
+    .filter((entry) => entry.dayKey === yesterdayKey)
+    .map((entry) => entry.score);
+  const last24Scores = entries
+    .filter((entry) => entry.hourStartMs >= timestamp - DAY_MS)
+    .map((entry) => entry.score);
+  const currentHourStart = hourStart(timestamp);
+  const currentHourScore =
+    [...entries].reverse().find((entry) => entry.hourStartMs === currentHourStart)
+      ?.score ?? null;
+
+  const dailyStats = new Map<
+    string,
+    { dayKey: string; dayStartMs: number; total: number; count: number }
+  >();
+  const hourlyStats = new Map<number, { total: number; count: number }>();
+
+  for (const entry of entries) {
+    const existingDaily = dailyStats.get(entry.dayKey) ?? {
+      dayKey: entry.dayKey,
+      dayStartMs: localDayStartMs(entry.hourStartMs, timeZoneOffsetMinutes),
+      total: 0,
+      count: 0,
+    };
+    existingDaily.total += entry.score;
+    existingDaily.count += 1;
+    dailyStats.set(entry.dayKey, existingDaily);
+
+    const existingHourly = hourlyStats.get(entry.hour) ?? { total: 0, count: 0 };
+    existingHourly.total += entry.score;
+    existingHourly.count += 1;
+    hourlyStats.set(entry.hour, existingHourly);
+  }
+
+  const dailyAverages = [...dailyStats.values()]
+    .sort((left, right) => left.dayStartMs - right.dayStartMs)
+    .slice(-21)
+    .map((day) => ({
+      id: day.dayKey,
+      dayKey: day.dayKey,
+      dayStartMs: day.dayStartMs,
+      average: roundMetric(day.total / day.count),
+      count: day.count,
+    }));
+
+  const hourlyAverages = Array.from({ length: 24 }, (_, hour) => {
+    const stats = hourlyStats.get(hour);
+    return {
+      id: String(hour),
+      hour,
+      label: hourLabel(hour),
+      average: stats ? roundMetric(stats.total / stats.count) : null,
+      count: stats?.count ?? 0,
+    };
+  });
+
+  const bestHourOfDay =
+    hourlyAverages
+      .filter(
+        (hour): hour is {
+          id: string;
+          hour: number;
+          label: string;
+          average: number;
+          count: number;
+        } => typeof hour.average === "number" && hour.count > 0,
+      )
+      .sort((left, right) => {
+        if (left.average === right.average) {
+          return right.count - left.count;
+        }
+        return right.average - left.average;
+      })[0] ?? null;
+
+  const lastSevenDayCutoff = timestamp - 7 * DAY_MS;
+  const lastSevenEntries = entries.filter(
+    (entry) => entry.hourStartMs >= lastSevenDayCutoff,
+  );
+  const expectedWindowStart =
+    lastSevenEntries[0]?.hourStartMs ?? hourStart(lastSevenDayCutoff);
+  const expectedHours = Math.max(
+    1,
+    Math.min(7 * 24, Math.ceil((timestamp - expectedWindowStart) / HOUR_MS)),
+  );
+  const responseRate7d = roundMetric(
+    ([...new Set(lastSevenEntries.map((entry) => entry.hourStartMs))].length /
+      expectedHours) *
+      100,
+  );
+
+  return {
+    generatedAt: timestamp,
+    windowDays,
+    timeZoneOffsetMinutes,
+    totalEntries: entries.length,
+    averageScore: roundMetric(averageOf(scores)),
+    todayAverage: todayScores.length > 0 ? roundMetric(averageOf(todayScores)) : null,
+    yesterdayAverage:
+      yesterdayScores.length > 0 ? roundMetric(averageOf(yesterdayScores)) : null,
+    deltaFromYesterday:
+      todayScores.length > 0 && yesterdayScores.length > 0
+        ? roundMetric(averageOf(todayScores) - averageOf(yesterdayScores))
+        : null,
+    last24Average:
+      last24Scores.length > 0 ? roundMetric(averageOf(last24Scores)) : null,
+    currentHourScore,
+    currentStreakDays: computeLocalDayStreak(
+      entries.map((entry) => entry.dayKey),
+      timestamp,
+      timeZoneOffsetMinutes,
+    ),
+    responseRate7d,
+    bestHourOfDay,
+    recentEntries: [...entries].reverse().slice(0, 72),
+    dailyAverages,
+    hourlyAverages,
+    lastRecordedAt: entries[entries.length - 1]?.hourStartMs ?? null,
+    lastUpdatedAt: numericObservations[numericObservations.length - 1]?.updatedAt ?? null,
+  };
 }
 
 async function getIntegrationDoc(ctx: any) {
@@ -685,6 +993,92 @@ export const syncDeviceSettings = mutation({
     }
 
     return true;
+  },
+});
+
+export const recordIntentionalityFromDevice = mutation({
+  args: {
+    deviceId: v.string(),
+    deviceSecret: v.string(),
+    score: convexNumber,
+    observedAt: v.optional(convexNumber),
+  },
+  handler: async (ctx, args) => {
+    const device = await getDeviceDoc(ctx, args.deviceId);
+    if (!device || device.deviceSecret !== args.deviceSecret) {
+      throw new Error("Invalid device credentials.");
+    }
+
+    const observedAt = normalizedObservedAt(args.observedAt);
+    const entry = await upsertHourlyIntentionalityObservation(ctx, {
+      hourStartMs: hourStart(observedAt),
+      score: clampIntentionalityScore(args.score),
+      source: "intent_ios_app",
+      sourceDeviceName: device.name,
+    });
+
+    return {
+      ok: true,
+      entry,
+    };
+  },
+});
+
+export const recordHourlyIntentionality = internalMutation({
+  args: {
+    score: convexNumber,
+    observedAt: v.optional(convexNumber),
+    source: v.string(),
+    sourceDeviceName: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const observedAt = normalizedObservedAt(args.observedAt);
+    const entry = await upsertHourlyIntentionalityObservation(ctx, {
+      hourStartMs: hourStart(observedAt),
+      score: clampIntentionalityScore(args.score),
+      source: args.source,
+      sourceDeviceName: args.sourceDeviceName,
+    });
+
+    return {
+      ok: true,
+      entry,
+    };
+  },
+});
+
+export const getIntentionalitySnapshotJson = query({
+  args: {
+    deviceId: v.string(),
+    deviceSecret: v.string(),
+    windowDays: v.optional(convexNumber),
+    timeZoneOffsetMinutes: v.optional(convexNumber),
+  },
+  handler: async (ctx, args) => {
+    const device = await getDeviceDoc(ctx, args.deviceId);
+    if (!device || device.deviceSecret !== args.deviceSecret) {
+      throw new Error("Invalid device credentials.");
+    }
+
+    const state = await buildIntentionalitySnapshot(ctx, {
+      windowDays: args.windowDays,
+      timeZoneOffsetMinutes: args.timeZoneOffsetMinutes,
+    });
+
+    return JSON.stringify(state);
+  },
+});
+
+export const getDeviceIntentionalityState = internalQuery({
+  args: {
+    windowDays: v.optional(convexNumber),
+    timeZoneOffsetMinutes: v.optional(convexNumber),
+  },
+  handler: async (ctx, args) => {
+    return await buildIntentionalitySnapshot(ctx, {
+      windowDays: args.windowDays,
+      timeZoneOffsetMinutes: args.timeZoneOffsetMinutes,
+    });
   },
 });
 

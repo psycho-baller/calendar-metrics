@@ -41,6 +41,11 @@ export default defineSchema({
     .index("by_subjectType_subjectId", ["subjectType", "subjectId"])
     .index("by_calendarId_observedAt", ["calendarId", "observedAt"])
     .index("by_subjectType_observedAt", ["subjectType", "observedAt"])
+    .index("by_subjectType_key_observedAt", [
+      "subjectType",
+      "key",
+      "observedAt",
+    ])
     .index("by_key_observedAt", ["key", "observedAt"]),
 
   userSecrets: defineTable({
