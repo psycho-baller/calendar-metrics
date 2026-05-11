@@ -33,7 +33,7 @@ export default function InlineWaitlistForm({
       return "text-red-300";
     }
     if (isJoined) {
-      return "text-[#9cebd6]";
+      return "text-[#6fdcc4]";
     }
     return "text-white/52";
   }, [isJoined, status]);
@@ -113,7 +113,7 @@ export default function InlineWaitlistForm({
         <button
           type="submit"
           disabled={isLoading || isJoined}
-          className="h-11 min-w-[6rem] shrink-0 rounded-full bg-[#9cebd6] px-5 text-[0.95rem] font-semibold leading-none text-[#061512] transition-colors duration-200 hover:bg-[#c2f7e8] disabled:cursor-default disabled:opacity-100"
+          className="h-11 min-w-[6rem] shrink-0 rounded-full bg-[#6fdcc4] px-5 text-[0.95rem] font-semibold leading-none text-[#061512] transition-colors duration-200 hover:bg-[#c2f7e8] disabled:cursor-default disabled:opacity-100"
         >
           {isJoined ? "Joined" : isLoading ? "Joining..." : "Join"}
         </button>

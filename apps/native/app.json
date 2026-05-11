@@ -1,7 +1,7 @@
 {
   "expo": {
     "scheme": "intent",
-    "primaryColor": "#9CEBD6",
+    "primaryColor": "#6FDCC4",
     "userInterfaceStyle": "automatic",
     "orientation": "default",
     "icon": "./assets/images/icon.png",

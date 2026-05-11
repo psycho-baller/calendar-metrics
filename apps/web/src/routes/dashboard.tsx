@@ -81,7 +81,7 @@ export type WeeklyComparison = {
 };
 
 const CORE_METRICS = ["focus", "discipline", "energy", "mindfulness", "intentionality", "purpose"];
-const BRAND_MINT = "#9CEBD6";
+const BRAND_MINT = "#6FDCC4";
 const BRAND_MINT_DEEP = "#5FD4BC";
 const BRAND_AMBER = "#F2AA64";
 const BRAND_LIME = "#D9EF59";
@@ -137,9 +137,9 @@ function compositeFromWeek(week: Record<string, number>): number | null {
 
 function heatmapCellClass(data: DailyAggregate | undefined): string {
   if (!data || (!data.sessionCount && !data.anyActivity)) return "bg-muted/30";
-  if (data.compositeScore === 0) return "bg-[#9CEBD6]/20";
-  if (data.compositeScore >= 8) return "bg-[#9CEBD6]";
-  if (data.compositeScore >= 6.5) return "bg-[#9CEBD6]/70";
+  if (data.compositeScore === 0) return "bg-[#6FDCC4]/20";
+  if (data.compositeScore >= 8) return "bg-[#6FDCC4]";
+  if (data.compositeScore >= 6.5) return "bg-[#6FDCC4]/70";
   if (data.compositeScore >= 5) return "bg-amber-500/60";
   return "bg-red-400/60";
 }
@@ -312,11 +312,11 @@ export function DashboardView({
       : null;
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(156,235,214,0.16),_transparent_30%),radial-gradient(circle_at_top_right,_rgba(242,170,100,0.14),_transparent_28%),linear-gradient(180deg,_rgba(248,250,252,0.88),_rgba(248,250,252,1))] px-4 py-8 dark:bg-[radial-gradient(circle_at_top_left,_rgba(156,235,214,0.2),_transparent_28%),radial-gradient(circle_at_top_right,_rgba(242,170,100,0.16),_transparent_30%),linear-gradient(180deg,_rgba(6,21,18,0.96),_rgba(10,31,27,1))]">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(111,220,196,0.16),_transparent_30%),radial-gradient(circle_at_top_right,_rgba(242,170,100,0.14),_transparent_28%),linear-gradient(180deg,_rgba(248,250,252,0.88),_rgba(248,250,252,1))] px-4 py-8 dark:bg-[radial-gradient(circle_at_top_left,_rgba(111,220,196,0.2),_transparent_28%),radial-gradient(circle_at_top_right,_rgba(242,170,100,0.16),_transparent_30%),linear-gradient(180deg,_rgba(6,21,18,0.96),_rgba(10,31,27,1))]">
       <div className="mx-auto flex max-w-7xl flex-col gap-6">
         <section className="relative overflow-hidden rounded-[32px] border border-white/50 bg-[linear-gradient(135deg,_rgba(15,23,42,0.92),_rgba(15,118,110,0.85)_56%,_rgba(180,83,9,0.84))] p-6 text-white shadow-[0_30px_90px_-45px_rgba(15,23,42,0.9)]">
           <div className="pointer-events-none absolute -left-10 top-[-5rem] h-64 w-64 rounded-full bg-white/10 blur-3xl" />
-          <div className="pointer-events-none absolute right-[-4rem] top-10 h-56 w-56 rounded-full bg-[#9CEBD6]/20 blur-3xl" />
+          <div className="pointer-events-none absolute right-[-4rem] top-10 h-56 w-56 rounded-full bg-[#6FDCC4]/20 blur-3xl" />
           <div className="relative flex flex-col gap-8 lg:flex-row lg:items-start lg:justify-between">
             <div className="max-w-2xl">
               <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.35em] text-white/60">
@@ -466,8 +466,8 @@ function MetricSelectorRail({
               className={cn(
                 "w-full rounded-[24px] border px-4 py-4 text-left transition-all",
                 active
-                  ? "border-[#9CEBD6]/60 bg-[#9CEBD6]/10 shadow-[0_20px_45px_-30px_rgba(156,235,214,0.65)]"
-                  : "border-border/70 bg-background/70 hover:border-[#9CEBD6]/35 hover:bg-[#9CEBD6]/[0.04]",
+                  ? "border-[#6FDCC4]/60 bg-[#6FDCC4]/10 shadow-[0_20px_45px_-30px_rgba(111,220,196,0.65)]"
+                  : "border-border/70 bg-background/70 hover:border-[#6FDCC4]/35 hover:bg-[#6FDCC4]/[0.04]",
               )}
             >
               <div className="flex items-start justify-between gap-3">
@@ -484,7 +484,7 @@ function MetricSelectorRail({
 
               <div className="mt-4 h-2 rounded-full bg-muted/80">
                 <div
-                  className="h-full rounded-full bg-[linear-gradient(90deg,_#9CEBD6,_#5FD4BC)] transition-all"
+                  className="h-full rounded-full bg-[linear-gradient(90deg,_#6FDCC4,_#5FD4BC)] transition-all"
                   style={{ width: `${Math.max(normalized * 100, 10)}%` }}
                 />
               </div>
@@ -552,7 +552,7 @@ function MetricChartPanel({
               <StageFact label="Max" value={formatScore(stats.max)} />
             </div>
 
-            <div className="h-[320px] rounded-[24px] bg-[linear-gradient(180deg,_rgba(156,235,214,0.08),_rgba(156,235,214,0.02))] p-4">
+            <div className="h-[320px] rounded-[24px] bg-[linear-gradient(180deg,_rgba(111,220,196,0.08),_rgba(111,220,196,0.02))] p-4">
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart
                   data={computeMovingAverage(
@@ -584,7 +584,7 @@ function MetricChartPanel({
                     cursor={{ stroke: "rgba(15,118,110,0.25)", strokeWidth: 1.5 }}
                     contentStyle={{
                       background: "rgba(15,23,42,0.96)",
-                      border: "1px solid rgba(156,235,214,0.18)",
+                      border: "1px solid rgba(111,220,196,0.18)",
                       borderRadius: "18px",
                       color: "white",
                     }}
@@ -621,7 +621,7 @@ function MetricChartPanel({
 
             <div className="flex items-center gap-4 px-1 text-xs text-muted-foreground">
               <span className="flex items-center gap-1.5">
-                <span className="inline-block h-2.5 w-5 rounded-sm bg-[#9CEBD6]/70" />
+                <span className="inline-block h-2.5 w-5 rounded-sm bg-[#6FDCC4]/70" />
                 Raw values
               </span>
               <span className="flex items-center gap-1.5">
@@ -794,7 +794,7 @@ function RecentActivityFeed({ activity }: { activity: RecentActivityItem[] }) {
             {activity.map((item) => (
               <div
                 key={item.id}
-                className="rounded-[24px] border border-border/65 bg-background/70 p-4 transition-colors hover:border-[#9CEBD6]/30 hover:bg-background"
+                className="rounded-[24px] border border-border/65 bg-background/70 p-4 transition-colors hover:border-[#6FDCC4]/30 hover:bg-background"
               >
                 <div className="flex items-start justify-between gap-4">
                   <div>
@@ -804,7 +804,7 @@ function RecentActivityFeed({ activity }: { activity: RecentActivityItem[] }) {
                         className={cn(
                           "rounded-full px-2 py-1 text-[10px] font-semibold uppercase tracking-[0.2em]",
                           item.subjectType === "intentSession"
-                            ? "bg-[#9CEBD6]/10 text-[#0E5A4D] dark:text-[#9CEBD6]"
+                            ? "bg-[#6FDCC4]/10 text-[#0E5A4D] dark:text-[#6FDCC4]"
                             : "bg-orange-500/10 text-orange-700 dark:text-orange-300",
                         )}
                       >
@@ -856,7 +856,7 @@ function CompositeStatRow({
   observationCount: number;
 }) {
   const deltaColor =
-    compositeDelta === null ? "text-muted-foreground" : compositeDelta > 0 ? "text-[#9CEBD6]" : compositeDelta < 0 ? "text-red-400" : "text-muted-foreground";
+    compositeDelta === null ? "text-muted-foreground" : compositeDelta > 0 ? "text-[#6FDCC4]" : compositeDelta < 0 ? "text-red-400" : "text-muted-foreground";
   const deltaLabel =
     compositeDelta === null
       ? "no prior week data"
@@ -889,7 +889,7 @@ function CompositeStatRow({
           {Array.from({ length: 7 }).map((_, i) => (
             <div
               key={i}
-              className={cn("h-1.5 flex-1 rounded-full", i < Math.min(currentStreak, 7) ? "bg-[#9CEBD6]" : "bg-muted/60")}
+              className={cn("h-1.5 flex-1 rounded-full", i < Math.min(currentStreak, 7) ? "bg-[#6FDCC4]" : "bg-muted/60")}
             />
           ))}
         </div>
@@ -1022,7 +1022,7 @@ function ConsistencyHeatmap({
 
         <div className="mt-4 flex items-center gap-3">
           <span className="text-[11px] text-muted-foreground">Less</span>
-          {["bg-muted/30", "bg-red-400/60", "bg-amber-500/60", "bg-[#9CEBD6]/70", "bg-[#9CEBD6]"].map((cls, i) => (
+          {["bg-muted/30", "bg-red-400/60", "bg-amber-500/60", "bg-[#6FDCC4]/70", "bg-[#6FDCC4]"].map((cls, i) => (
             <div key={i} className={cn("h-[14px] w-[14px] rounded-[2px]", cls)} />
           ))}
           <span className="text-[11px] text-muted-foreground">More</span>
@@ -1162,7 +1162,7 @@ function WeekOverWeekPanel({ weeklyComparison }: { weeklyComparison: WeeklyCompa
           </div>
         ) : (
           <>
-            <div className="h-[180px] rounded-[20px] bg-[linear-gradient(180deg,_rgba(156,235,214,0.06),_rgba(156,235,214,0.01))] p-3">
+            <div className="h-[180px] rounded-[20px] bg-[linear-gradient(180deg,_rgba(111,220,196,0.06),_rgba(111,220,196,0.01))] p-3">
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={barData} barGap={2} barCategoryGap="25%">
                   <CartesianGrid strokeDasharray="4 4" stroke="rgba(100,116,139,0.12)" vertical={false} />
@@ -1203,7 +1203,7 @@ function WeekOverWeekPanel({ weeklyComparison }: { weeklyComparison: WeeklyCompa
                         <span
                           className={cn(
                             "text-xs font-bold",
-                            isPositive ? "text-[#9CEBD6]" : isNegative ? "text-red-400" : "text-muted-foreground",
+                            isPositive ? "text-[#6FDCC4]" : isNegative ? "text-red-400" : "text-muted-foreground",
                           )}
                         >
                           {isPositive ? "+" : ""}{formatScore(delta)}
@@ -1335,8 +1335,8 @@ function EmptyState() {
   return (
     <Card className="rounded-[32px] border border-dashed border-border/80 bg-card/80 shadow-[0_24px_70px_-45px_rgba(15,23,42,0.6)] backdrop-blur">
       <CardContent className="flex flex-col items-center justify-center py-20">
-        <div className="mb-6 rounded-full border border-border/70 bg-[radial-gradient(circle,_rgba(156,235,214,0.18),_transparent_70%)] px-6 py-6">
-          <div className="h-16 w-16 rounded-full border border-[#9CEBD6]/30 bg-[#9CEBD6]/10" />
+        <div className="mb-6 rounded-full border border-border/70 bg-[radial-gradient(circle,_rgba(111,220,196,0.18),_transparent_70%)] px-6 py-6">
+          <div className="h-16 w-16 rounded-full border border-[#6FDCC4]/30 bg-[#6FDCC4]/10" />
         </div>
         <h3 className="font-serif text-3xl">No unified analytics yet</h3>
         <p className="mt-3 max-w-xl text-center text-sm leading-6 text-muted-foreground">
@@ -1381,7 +1381,7 @@ function WindowToggle({
           className={cn(
             "rounded-full px-3 py-1.5 text-xs font-semibold uppercase tracking-[0.18em] transition-colors",
             value === option
-              ? "bg-[#9CEBD6] text-[#061512]"
+              ? "bg-[#6FDCC4] text-[#061512]"
               : "text-muted-foreground hover:text-foreground",
           )}
         >

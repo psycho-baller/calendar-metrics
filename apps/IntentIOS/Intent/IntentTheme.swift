@@ -24,8 +24,8 @@ enum IntentTheme {
     static let border = Color.white.opacity(0.14)
     static let textPrimary = Color.white
     static let textSecondary = Color(hex: "#afbab7")
-    static let accent = Color(hex: "#9CEBD6")
-    static let mint = Color(hex: "#9CEBD6")
+    static let accent = Color(hex: "#6FDCC4")
+    static let mint = Color(hex: "#6FDCC4")
     static let amber = Color(hex: "#f2b84b")
     static let coral = Color(hex: "#ee6a55")
 }

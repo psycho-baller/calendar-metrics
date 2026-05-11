@@ -15,7 +15,7 @@ struct AppTheme {
 class ThemeManager: ObservableObject {
     static let shared = ThemeManager()
 
-    static let scheduleBlue = Color(hex: "#9CEBD6")
+    static let scheduleBlue = Color(hex: "#6FDCC4")
     static let sunriseGold = Color(hex: "#F4B942")
     static let ember = scheduleBlue
     static let obsidianPurple = scheduleBlue

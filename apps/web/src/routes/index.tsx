@@ -26,7 +26,7 @@ const principles = [
 ];
 
 const sampleRows = [
-  { time: "09:00", title: "Deep work block", score: "8.4", tone: "bg-[#9cebd6]" },
+  { time: "09:00", title: "Deep work block", score: "8.4", tone: "bg-[#6fdcc4]" },
   { time: "11:30", title: "Product sync", score: "6.8", tone: "bg-[#f2aa64]" },
   { time: "14:00", title: "Implementation pass", score: "8.9", tone: "bg-[#5fd4bc]" },
   { time: "16:30", title: "Review and reset", score: "7.2", tone: "bg-[#d9ef59]" },
@@ -39,7 +39,7 @@ function HomeComponent() {
         <div className="mx-auto max-w-7xl">
           <div className="relative z-10 mx-auto max-w-5xl text-center">
             <div className="mx-auto mb-7 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-[11px] font-semibold uppercase tracking-normal text-white/58 backdrop-blur-xl">
-              <CircleDot className="size-3 text-[#9cebd6]" />
+              <CircleDot className="size-3 text-[#6fdcc4]" />
               Numbers for accountability and productivity
             </div>
 
@@ -63,7 +63,7 @@ function HomeComponent() {
             <div className="mt-8 flex flex-col items-center justify-center gap-3 sm:flex-row">
               <a
                 href="/demo"
-                className="inline-flex h-11 items-center gap-2 rounded-full border border-[#9cebd6]/40 bg-[#9cebd6]/10 px-5 text-sm font-semibold text-[#c9fff0] transition-colors hover:bg-[#9cebd6]/16"
+                className="inline-flex h-11 items-center gap-2 rounded-full border border-[#6fdcc4]/40 bg-[#6fdcc4]/10 px-5 text-sm font-semibold text-[#c9fff0] transition-colors hover:bg-[#6fdcc4]/16"
               >
                 Explore demo
                 <ArrowRight className="size-4" />
@@ -84,7 +84,7 @@ function HomeComponent() {
       <section className="border-y border-white/8 bg-white/[0.025] px-5 py-14 md:px-8">
         <div className="mx-auto grid max-w-7xl gap-8 md:grid-cols-[0.8fr_1.2fr] md:items-end">
           <div>
-            <p className="text-[11px] font-semibold uppercase tracking-normal text-[#9cebd6]">
+            <p className="text-[11px] font-semibold uppercase tracking-normal text-[#6fdcc4]">
               Motivation
             </p>
             <h2 className="mt-4 max-w-xl font-serif text-[2.55rem] leading-[0.95] tracking-normal text-white md:text-[3.45rem]">
@@ -107,7 +107,7 @@ function HomeComponent() {
                 key={principle.title}
                 className="rounded-lg border border-white/9 bg-white/[0.035] p-6 shadow-[0_22px_80px_-60px_rgba(20,184,166,0.55)] backdrop-blur-xl md:p-7"
               >
-                <p className="text-[11px] font-semibold uppercase tracking-normal text-[#9cebd6]/80">
+                <p className="text-[11px] font-semibold uppercase tracking-normal text-[#6fdcc4]/80">
                   {principle.label}
                 </p>
                 <h3 className="mt-5 font-serif text-[1.75rem] leading-[1.02] text-white">
@@ -121,8 +121,8 @@ function HomeComponent() {
       </section>
 
       <section className="px-5 pb-20 md:px-8 md:pb-24">
-        <div className="mx-auto max-w-7xl rounded-lg border border-[#9cebd6]/16 bg-[linear-gradient(135deg,_rgba(156,235,214,0.13),_rgba(255,255,255,0.03))] p-6 text-center shadow-[0_30px_120px_-75px_rgba(156,235,214,0.65)] backdrop-blur-xl md:p-10">
-          <p className="mx-auto inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-normal text-[#9cebd6]">
+        <div className="mx-auto max-w-7xl rounded-lg border border-[#6fdcc4]/16 bg-[linear-gradient(135deg,_rgba(111,220,196,0.13),_rgba(255,255,255,0.03))] p-6 text-center shadow-[0_30px_120px_-75px_rgba(111,220,196,0.65)] backdrop-blur-xl md:p-10">
+          <p className="mx-auto inline-flex items-center gap-2 text-[11px] font-semibold uppercase tracking-normal text-[#6fdcc4]">
             <Sparkles className="size-3.5" />
             Early access
           </p>
@@ -143,7 +143,7 @@ function HomeComponent() {
 
 function ProductSignalPreview() {
   return (
-    <div className="relative z-10 mx-auto mt-16 max-w-5xl overflow-hidden rounded-lg border border-white/10 bg-[#081b18]/88 p-4 shadow-[0_40px_160px_-95px_rgba(156,235,214,0.9)] backdrop-blur-xl md:mt-20 md:p-5">
+    <div className="relative z-10 mx-auto mt-16 max-w-5xl overflow-hidden rounded-lg border border-white/10 bg-[#081b18]/88 p-4 shadow-[0_40px_160px_-95px_rgba(111,220,196,0.9)] backdrop-blur-xl md:mt-20 md:p-5">
       <div className="grid gap-4 lg:grid-cols-[0.95fr_1.05fr]">
         <div className="rounded-lg border border-white/8 bg-white/[0.035] p-5">
           <div className="flex items-center justify-between">
@@ -153,7 +153,7 @@ function ProductSignalPreview() {
               </p>
               <h2 className="mt-2 font-serif text-3xl text-white">Intent ledger</h2>
             </div>
-            <CalendarDays className="size-6 text-[#9cebd6]" />
+            <CalendarDays className="size-6 text-[#6fdcc4]" />
           </div>
 
           <div className="mt-7 space-y-3">
@@ -184,9 +184,9 @@ function ProductSignalPreview() {
                 <p className="text-[11px] font-semibold uppercase tracking-normal text-white/42">
                   Composite score
                 </p>
-                <p className="mt-2 font-serif text-5xl font-semibold text-[#9cebd6]">7.8</p>
+                <p className="mt-2 font-serif text-5xl font-semibold text-[#6fdcc4]">7.8</p>
               </div>
-              <LineChart className="size-7 text-[#9cebd6]" />
+              <LineChart className="size-7 text-[#6fdcc4]" />
             </div>
             <div className="mt-6 grid grid-cols-3 gap-2">
               {["Focus", "Energy", "Intent"].map((label, index) => (
@@ -211,7 +211,7 @@ function ProductSignalPreview() {
                 "Two-hour focus blocks are producing the best purpose scores.",
               ].map((item) => (
                 <div key={item} className="flex gap-3 text-sm leading-6 text-white/62">
-                  <Check className="mt-1 size-4 shrink-0 text-[#9cebd6]" />
+                  <Check className="mt-1 size-4 shrink-0 text-[#6fdcc4]" />
                   <span>{item}</span>
                 </div>
               ))}
