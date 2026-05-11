@@ -85,7 +85,7 @@ struct IntentMetricsView: View {
                     .offset(x: -40, y: -60)
 
                 Circle()
-                    .fill(Color.teal.opacity(0.24))
+                    .fill(Color.accentColor.opacity(0.24))
                     .frame(width: 220, height: 220)
                     .blur(radius: 70)
                     .offset(x: 520, y: -50)
@@ -120,7 +120,7 @@ struct IntentMetricsView: View {
                         SnapshotChip(
                             title: "Dominant lane",
                             value: (metrics.dominantCategory ?? "Mixed").capitalized,
-                            accent: Color.teal
+                            accent: Color.accentColor
                         )
                         SnapshotChip(
                             title: "Distraction load",
@@ -144,7 +144,7 @@ struct IntentMetricsView: View {
                 title: "Reviewed Blocks",
                 value: "\(metrics.reviewedSessions)",
                 caption: "\(metrics.pendingReviews) waiting in queue",
-                tone: .mint,
+                tone: .accentColor,
                 systemImage: "checkmark.seal.fill"
             )
 
@@ -152,7 +152,7 @@ struct IntentMetricsView: View {
                 title: "Review Closure",
                 value: "\(Int(metrics.reviewCompletionRate.rounded()))%",
                 caption: "\(metrics.completedSessions) completed sessions in window",
-                tone: .blue,
+                tone: .accentColor,
                 systemImage: "arrow.triangle.branch"
             )
 
@@ -201,7 +201,7 @@ struct IntentMetricsView: View {
                                 .interpolationMethod(.catmullRom)
                                 .foregroundStyle(
                                     LinearGradient(
-                                        colors: [Color.teal.opacity(0.32), Color.teal.opacity(0.04)],
+                                        colors: [Color.accentColor.opacity(0.32), Color.accentColor.opacity(0.04)],
                                         startPoint: .top,
                                         endPoint: .bottom
                                     )
@@ -213,7 +213,7 @@ struct IntentMetricsView: View {
                                 )
                                 .interpolationMethod(.catmullRom)
                                 .lineStyle(StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
-                                .foregroundStyle(Color.teal)
+                                .foregroundStyle(Color.accentColor)
 
                                 PointMark(
                                     x: .value("Session", chartDate(point.observedAt)),
@@ -303,7 +303,7 @@ struct IntentMetricsView: View {
                             x: .value("Day", chartDate(point.dayStart)),
                             y: .value("Reviewed", point.reviewedCount)
                         )
-                        .foregroundStyle(Color.teal.opacity(0.8))
+                        .foregroundStyle(Color.accentColor.opacity(0.8))
                         .cornerRadius(8)
 
                         if let averageFocus = point.averageFocus {
@@ -420,7 +420,7 @@ struct IntentMetricsView: View {
                         )
                         .foregroundStyle(
                             distractions == 0
-                                ? Color.teal.opacity(0.45)
+                                ? Color.accentColor.opacity(0.45)
                                 : Color.orange.opacity(0.85)
                         )
                         .cornerRadius(6)
@@ -527,7 +527,7 @@ struct IntentMetricsView: View {
                                 .fill(
                                     resolvedSignalKeyAvailable(signal.key, in: signals)
                                     ? (resolvedSignalKey(from: model.metricsState) == signal.key
-                                        ? Color.teal.opacity(0.18)
+                                        ? Color.accentColor.opacity(0.18)
                                         : Color.primary.opacity(0.05))
                                     : Color.primary.opacity(0.03)
                                 )
@@ -739,7 +739,7 @@ private struct MetricsWindowPicker: View {
                             Capsule(style: .continuous)
                                 .fill(
                                     selection == option
-                                        ? Color.teal.opacity(0.18)
+                                        ? Color.accentColor.opacity(0.18)
                                         : Color.primary.opacity(0.06)
                                 )
                         )
@@ -811,7 +811,7 @@ private struct SignalBarRow: View {
                 if let delta = signal.deltaFromPrevious {
                     Text(delta >= 0 ? "+\(String(format: "%.1f", delta))" : String(format: "%.1f", delta))
                         .font(.caption.weight(.bold))
-                        .foregroundStyle(delta >= 0 ? .teal : .orange)
+                        .foregroundStyle(delta >= 0 ? Color.accentColor : Color.orange)
                 }
                 Text(String(format: "%.1f", signal.average))
                     .font(.caption.weight(.bold))
@@ -828,7 +828,7 @@ private struct SignalBarRow: View {
                     Capsule(style: .continuous)
                         .fill(
                             LinearGradient(
-                                colors: [.teal, .mint],
+                                colors: [.accentColor, .mint],
                                 startPoint: .leading,
                                 endPoint: .trailing
                             )
@@ -868,7 +868,7 @@ private struct ReflectionHighlightCard: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Went well")
                         .font(.caption.weight(.bold))
-                        .foregroundStyle(.teal)
+                        .foregroundStyle(Color.accentColor)
                     Text(item.whatWentWell)
                         .font(.subheadline)
                         .foregroundStyle(.primary.opacity(0.86))

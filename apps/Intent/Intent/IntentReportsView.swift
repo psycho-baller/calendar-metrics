@@ -91,7 +91,7 @@ struct IntentReportsView: View {
                     VStack(alignment: .trailing, spacing: 10) {
                         ReportBadge(
                             title: report.source == .ai ? "AI" : "Fallback",
-                            tone: report.source == .ai ? .teal : .orange
+                            tone: report.source == .ai ? .accentColor : .orange
                         )
                         Button("Copy") {
                             copy(report)
@@ -131,7 +131,7 @@ struct IntentReportsView: View {
                 ForEach(items, id: \.self) { item in
                     HStack(alignment: .top, spacing: 10) {
                         Circle()
-                            .fill(Color.teal.opacity(0.8))
+                            .fill(Color.accentColor.opacity(0.8))
                             .frame(width: 8, height: 8)
                             .padding(.top, 6)
 

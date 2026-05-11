@@ -15,49 +15,49 @@ struct AppTheme {
 class ThemeManager: ObservableObject {
     static let shared = ThemeManager()
 
-    static let scheduleBlue = Color(hex: "#1768AC")
+    static let scheduleBlue = Color(hex: "#9CEBD6")
     static let sunriseGold = Color(hex: "#F4B942")
-    static let ember = Color(hex: "#D8572A")
+    static let ember = scheduleBlue
     static let obsidianPurple = scheduleBlue
 
     private static let nightTheme = AppTheme(
         backgroundGradient: LinearGradient(
             colors: [
-                Color(hex: "#10212F"),
-                Color(hex: "#203A43"),
-                Color(hex: "#2C5364")
+                Color(hex: "#07191C"),
+                Color(hex: "#0E2E2A"),
+                Color(hex: "#173D36")
             ],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         ),
-        cardBackground: Color(hex: "#11293A").opacity(0.88),
+        cardBackground: Color(hex: "#0C2724").opacity(0.88),
         textPrimary: .white,
-        textSecondary: Color(hex: "#A8C5D6"),
-        accent: sunriseGold,
+        textSecondary: Color(hex: "#B7D9D0"),
+        accent: scheduleBlue,
         success: Color(hex: "#7BD389"),
         warning: sunriseGold,
         actionPrimary: scheduleBlue,
-        actionSecondary: Color(hex: "#21455F")
+        actionSecondary: Color(hex: "#17423B")
     )
 
     private static let lightTheme = AppTheme(
         backgroundGradient: LinearGradient(
             colors: [
-                Color(hex: "#FFF7E8"),
-                Color(hex: "#F8EDE3"),
-                Color(hex: "#E3F2FD")
+                Color(hex: "#F2FFFB"),
+                Color(hex: "#E4F8F2"),
+                Color(hex: "#D4F2EA")
             ],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
         ),
         cardBackground: Color.white.opacity(0.92),
-        textPrimary: Color(hex: "#183642"),
-        textSecondary: Color(hex: "#5C7285"),
-        accent: ember,
+        textPrimary: Color(hex: "#123630"),
+        textSecondary: Color(hex: "#50736A"),
+        accent: scheduleBlue,
         success: Color(hex: "#2A9D8F"),
         warning: sunriseGold,
-        actionPrimary: ember,
-        actionSecondary: Color.white.opacity(0.7)
+        actionPrimary: scheduleBlue,
+        actionSecondary: Color.white.opacity(0.76)
     )
 
     enum ThemeMode: String, CaseIterable, Identifiable {

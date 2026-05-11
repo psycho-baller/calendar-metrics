@@ -214,7 +214,7 @@ struct ContentView: View {
                         )
 
                         if let topCategory {
-                            StatusBadge(title: topCategory.capitalized, tone: .blue)
+                            StatusBadge(title: topCategory.capitalized, tone: .accentColor)
                         }
                     }
                 }
@@ -232,7 +232,7 @@ struct ContentView: View {
                 value: durationText(trackedTodayMs),
                 caption: "\(todaySessions.count) session\(todaySessions.count == 1 ? "" : "s") logged",
                 systemImage: "clock.arrow.trianglehead.counterclockwise.rotate.90",
-                tone: .teal
+                tone: .accentColor
             )
 
             MetricCard(
@@ -240,7 +240,7 @@ struct ContentView: View {
                 value: "\(completedTodayCount)",
                 caption: "\(reviewedTodayCount) reviewed",
                 systemImage: "checkmark.seal.fill",
-                tone: .mint
+                tone: .accentColor
             )
 
             MetricCard(
@@ -248,7 +248,7 @@ struct ContentView: View {
                 value: averageFocusText,
                 caption: reviewedTodayCount > 0 ? "based on submitted reviews" : "review a block to score it",
                 systemImage: "scope",
-                tone: .blue
+                tone: .accentColor
             )
 
             MetricCard(
@@ -287,7 +287,7 @@ struct ContentView: View {
                                     title: focusStateTitle(for: session.focusStatus),
                                     tone: session.focusStatus == "started" ? .green : .yellow
                                 )
-                                StatusBadge(title: "Toggl live", tone: .blue)
+                                StatusBadge(title: "Toggl live", tone: .accentColor)
                             }
 
                             if !session.tags.isEmpty {
@@ -420,7 +420,7 @@ struct ContentView: View {
                     value: model.lastSuccessfulPollAt.map {
                         Self.relativeFormatter.localizedString(for: $0, relativeTo: Date())
                     } ?? "Never",
-                    tone: .blue
+                    tone: .accentColor
                 )
 
                 PulseCell(
@@ -858,7 +858,7 @@ struct ContentView: View {
             Color(nsColor: .windowBackgroundColor)
 
             Circle()
-                .fill(Color.teal.opacity(0.14))
+                .fill(Color.accentColor.opacity(0.14))
                 .frame(width: 420, height: 420)
                 .blur(radius: 70)
                 .offset(x: -320, y: -240)

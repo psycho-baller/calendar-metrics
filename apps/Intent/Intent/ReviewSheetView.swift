@@ -82,7 +82,7 @@ struct ReviewSheetView: View {
                                 RoundedRectangle(cornerRadius: 12, style: .continuous)
                                     .fill(
                                         LinearGradient(
-                                            colors: [.blue, .teal],
+                                            colors: [.accentColor, .mint],
                                             startPoint: .topLeading,
                                             endPoint: .bottomTrailing
                                         )
@@ -145,7 +145,7 @@ struct ReviewSheetView: View {
                         if let quickCaptureNotice, !quickCaptureNotice.isEmpty {
                             Text(quickCaptureNotice)
                                 .font(.footnote.weight(.semibold))
-                                .foregroundStyle(.teal)
+                                .foregroundStyle(Color.accentColor)
                         }
 
                         if let quickCaptureError, !quickCaptureError.isEmpty {
@@ -387,17 +387,17 @@ struct ReviewSheetView: View {
     private func tint(for metricID: String) -> Color {
         switch metricID {
         case "focus":
-            return .blue
+            return .accentColor
         case "energy":
             return .orange
         case "discipline":
-            return .mint
+            return .accentColor
         case "adherence":
             return .green
         case "intentionality":
             return .purple
         default:
-            return .teal
+            return .accentColor
         }
     }
 

@@ -14,6 +14,7 @@ struct IntentApp: App {
     var body: some Scene {
         WindowGroup(id: "main") {
             ContentView(model: model)
+                .tint(.accentColor)
         }
 
         MenuBarExtra(
@@ -21,6 +22,7 @@ struct IntentApp: App {
             systemImage: model.pendingReviewsCount > 0 ? "flag.fill" : "scope"
         ) {
             MenuBarView(model: model)
+                .tint(.accentColor)
         }
     }
 }
